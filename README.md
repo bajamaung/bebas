@@ -1,91 +1,89 @@
-# 🌹 Aura & Co. Boutique Cafe — Finance Management System
+# ☕ Brewledger — Cafe Finance Management System
 
-Sistem manajemen keuangan berbasis web dengan tema **Luxury Rose Gold Gradient**.
+Sistem manajemen keuangan kafe berbasis PHP Native + MySQL + Bootstrap.
 
 ---
 
-## 📁 Struktur File
+## 📁 Struktur Folder
 
 ```
-aura-finance/
-├── index.php              ← Halaman utama (Dashboard, SPA)
-├── api.php                ← JSON API untuk CRUD (POST)
-├── api_filter.php         ← JSON API untuk filter tabel (GET)
-├── setup.sql              ← Script SQL untuk inisialisasi database
+cafe_finance/
+├── index.php                  # Dashboard utama
+├── penjualan.php              # Router penjualan (CRUD)
+├── operasional.php            # Router operasional (CRUD)
+├── database.sql               # Script SQL database
 ├── config/
-│   └── database.php       ← Konfigurasi koneksi PDO
-└── includes/
-    └── helpers.php        ← Fungsi-fungsi utama (CRUD, format, chart)
+│   ├── database.php           # Konfigurasi & koneksi PDO
+│   └── helpers.php            # Fungsi bantu (formatRupiah, dll)
+├── models/
+│   ├── PenjualanModel.php     # Model data penjualan
+│   └── OperasionalModel.php   # Model data operasional
+└── controllers/
+    ├── PenjualanController.php  # Logic CRUD penjualan
+    └── OperasionalController.php # Logic CRUD operasional
 ```
 
 ---
 
 ## 🚀 Cara Setup
 
-### 1. Import Database
+### 1. Persyaratan
+- PHP >= 8.1
+- MySQL / MariaDB
+- Web server: XAMPP / Laragon / WAMP
+
+### 2. Import Database
+Buka phpMyAdmin atau MySQL CLI, lalu jalankan:
 ```sql
--- Di MySQL Workbench, phpMyAdmin, atau terminal:
-SOURCE /path/to/aura-finance/setup.sql;
+source /path/to/cafe_finance/database.sql;
 ```
 
-### 2. Konfigurasi Database
+Atau paste isi `database.sql` di tab SQL phpMyAdmin.
+
+### 3. Konfigurasi Database
 Edit `config/database.php`:
 ```php
-define('DB_HOST', 'localhost');   // Host MySQL
-define('DB_NAME', 'aura_finance'); // Nama database
-define('DB_USER', 'root');         // Username MySQL
-define('DB_PASS', '');             // Password MySQL
+define('DB_HOST', 'localhost');
+define('DB_USER', 'root');      // username MySQL kamu
+define('DB_PASS', '');          // password MySQL kamu
+define('DB_NAME', 'cafe_finance');
 ```
 
-### 3. Jalankan dengan PHP
-```bash
-cd aura-finance/
-php -S localhost:8080
-# Buka http://localhost:8080
-```
+### 4. Jalankan
+Taruh folder `cafe_finance/` di:
+- XAMPP: `C:/xampp/htdocs/cafe_finance/`
+- Laragon: `C:/laragon/www/cafe_finance/`
 
-Atau letakkan di folder `htdocs` (XAMPP) / `www` (WAMP).
+Akses di browser: `http://localhost/cafe_finance/`
 
 ---
 
 ## ✨ Fitur
 
-| Fitur | Status |
-|-------|--------|
-| Dashboard statistik hari ini | ✅ |
-| Grafik 7 hari (Chart.js) | ✅ |
-| Ringkasan bulan ini | ✅ |
-| CRUD Penjualan | ✅ |
-| CRUD Operasional | ✅ |
-| Filter data by range tanggal | ✅ |
-| Laporan 6 bulan + bar chart | ✅ |
-| Validasi input angka positif | ✅ |
-| Format mata uang Rupiah | ✅ |
-| Toast notification | ✅ |
-| Glassmorphism UI | ✅ |
-| Responsive (mobile) | ✅ |
+| Fitur | Keterangan |
+|-------|-----------|
+| 📊 Dashboard | Statistik harian real-time |
+| 💰 Penjualan CRUD | Tambah, edit, hapus data pemasukan |
+| 🧾 Operasional CRUD | Tambah, edit, hapus data pengeluaran |
+| 📈 Grafik | Chart 7 hari pemasukan vs pengeluaran |
+| 🔍 Filter | Filter data berdasarkan rentang tanggal |
+| 🧮 Agregasi SQL | SUM total penjualan, operasional, keuntungan |
+| 📱 Responsive | Tampilan mobile-friendly dengan sidebar toggle |
+| 💱 Format Rupiah | Semua nominal dalam format Rp |
+
+---
+
+## 🔒 Keamanan
+- Menggunakan PDO prepared statements (anti SQL Injection)
+- Input HTML di-escape dengan `htmlspecialchars()`
+- Validasi angka positif di server & client
+- CSRF sederhana melalui session
 
 ---
 
 ## 🎨 Tech Stack
-
-- **Backend**: PHP 8.x Native (PDO + MySQLi-safe)
-- **Database**: MySQL 5.7+ / MariaDB 10.x
-- **CSS Framework**: Tailwind CSS (CDN)
-- **Charts**: Chart.js 4.4.0
-- **Fonts**: Cormorant Garamond + Jost (Google Fonts)
-- **Architecture**: Modular PHP (Simple MVC pattern)
-
----
-
-## 🔐 Keamanan
-
-- PDO prepared statements (SQL injection safe)
-- `htmlspecialchars()` pada semua output
-- `strip_tags()` pada semua input
-- Validasi server-side (angka positif, field required)
-- Charset UTF-8MB4
-
----
-
-*Dibuat untuk Aura & Co. Boutique Cafe © 2026*
+- **Backend**: PHP 8.1+ Native (MVC Pattern)
+- **Database**: MySQL / MariaDB
+- **Frontend**: Bootstrap 5.3 + Custom CSS
+- **Chart**: Chart.js 4
+- **Font**: Playfair Display + DM Sans

@@ -1,15 +1,19 @@
 <?php
-// config/database.php
+// ============================================
+// Database Configuration
+// ============================================
 
 define('DB_HOST', 'localhost');
-define('DB_NAME', 'aura_finance');
 define('DB_USER', 'root');
 define('DB_PASS', '');
+define('DB_NAME', 'cafe_finance');
 define('DB_CHARSET', 'utf8mb4');
 
-function getConnection(): PDO {
-    static $pdo = null;
-    if ($pdo === null) {
+class Database {
+    private static $instance = null;
+    private $connection;
+
+    private function __construct() {
         $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
         $options = [
             PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
@@ -17,10 +21,24 @@ function getConnection(): PDO {
             PDO::ATTR_EMULATE_PREPARES   => false,
         ];
         try {
-            $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+            $this->connection = new PDO($dsn, DB_USER, DB_PASS, $options);
         } catch (PDOException $e) {
             die(json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]));
         }
     }
-    return $pdo;
+
+    public static function getInstance(): self {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
+    }
+
+    public function getConnection(): PDO {
+        return $this->connection;
+    }
+}
+
+function db(): PDO {
+    return Database::getInstance()->getConnection();
 }

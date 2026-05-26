@@ -1,1529 +1,1292 @@
 <?php
-// index.php — Dashboard Utama Nada & Cafe
-require_once __DIR__ . '/includes/helpers.php';
+session_start();
+require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/config/helpers.php';
+require_once __DIR__ . '/models/PenjualanModel.php';
+require_once __DIR__ . '/models/OperasionalModel.php';
 
-$stats     = getStatistikHariIni();
-$chartData = getChartData();
-$monthly   = getMonthlySummary(6);
-$today     = date('Y-m-d');
-$page      = $_GET['page'] ?? 'dashboard';
+$penjualanModel   = new PenjualanModel();
+$operasionalModel = new OperasionalModel();
+
+// --- Filter ---
+$filter_start = $_GET['filter_start'] ?? '';
+$filter_end   = $_GET['filter_end']   ?? '';
+
+// --- Summary Aggregation ---
+$summaryP = $penjualanModel->getSummary($filter_start, $filter_end);
+$summaryO = $operasionalModel->getSummary($filter_start, $filter_end);
+$totalPenjualan   = (float)$summaryP['total_penjualan'];
+$totalOperasional = (float)$summaryO['total_operasional'];
+$totalKeuntungan  = $totalPenjualan - $totalOperasional;
+
+// --- Today Summary ---
+$todayP = $penjualanModel->getToday();
+$todayO = $operasionalModel->getToday();
+$todayPenjualan   = (float)$todayP['total'];
+$todayOperasional = (float)$todayO['total'];
+$todayKeuntungan  = $todayPenjualan - $todayOperasional;
+
+// --- Chart Data ---
+$chartPenjualan   = $penjualanModel->getChartData(7);
+$chartOperasional = $operasionalModel->getChartData(7);
+
+// Build chart dates (last 7 days)
+$chartDates = [];
+for ($i = 6; $i >= 0; $i--) {
+    $chartDates[] = date('Y-m-d', strtotime("-{$i} days"));
+}
+$chartPMap = array_column($chartPenjualan, 'total', 'tanggal');
+$chartOMap = array_column($chartOperasional, 'total', 'tanggal');
+$chartLabels = [];
+$chartPData  = [];
+$chartOData  = [];
+foreach ($chartDates as $d) {
+    $parts = explode('-', $d);
+    $months = ['01'=>'Jan','02'=>'Feb','03'=>'Mar','04'=>'Apr','05'=>'Mei','06'=>'Jun',
+               '07'=>'Jul','08'=>'Agu','09'=>'Sep','10'=>'Okt','11'=>'Nov','12'=>'Des'];
+    $chartLabels[] = $parts[2] . ' ' . ($months[$parts[1]] ?? $parts[1]);
+    $chartPData[]  = (float)($chartPMap[$d] ?? 0);
+    $chartOData[]  = (float)($chartOMap[$d] ?? 0);
+}
+
+// --- Table Data ---
+$penjualanList   = $penjualanModel->getAll($filter_start, $filter_end);
+$operasionalList = $operasionalModel->getAll($filter_start, $filter_end);
+
+// --- Edit State ---
+$editPenjualan   = $_SESSION['edit_penjualan']   ?? null;
+$editOperasional = $_SESSION['edit_operasional'] ?? null;
+unset($_SESSION['edit_penjualan'], $_SESSION['edit_operasional']);
+
+$profitPercent = $totalPenjualan > 0 ? round(($totalKeuntungan / $totalPenjualan) * 100, 1) : 0;
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Nada &amp; Cafe — Finance</title>
-<script src="https://cdn.tailwindcss.com"></script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Brewledger — Cafe Finance System</title>
+
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<!-- Bootstrap 5 -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<!-- Chart.js -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+
 <style>
-  :root {
-    --g1: #0D1F0F;
-    --g2: #1A3320;
-    --g3: #2A5232;
-    --g4: #3A7048;
-    --g5: #4E9060;
-    --g-accent: #6BBF80;
-    --g-light: #A8D5B5;
+/* ===== CSS VARIABLES ===== */
+:root {
+    --cafe-espresso:   #1C0A00;
+    --cafe-dark:       #2D1505;
+    --cafe-brown:      #6B3A2A;
+    --cafe-mocha:      #8B5A3C;
+    --cafe-caramel:    #C4843A;
+    --cafe-gold:       #D4A853;
+    --cafe-cream:      #F5ECD7;
+    --cafe-latte:      #EDD9B8;
+    --cafe-white:      #FDF8F0;
+    --sidebar-width:   260px;
+    --topbar-h:        70px;
+    --radius-lg:       16px;
+    --radius-md:       12px;
+    --radius-sm:       8px;
+    --shadow-card:     0 4px 24px rgba(28,10,0,0.10);
+    --shadow-lg:       0 8px 40px rgba(28,10,0,0.16);
+    --transition:      all 0.28s cubic-bezier(.4,0,.2,1);
+}
 
-    --p1: #FF6B9D;
-    --p2: #FF8FB3;
-    --p3: #FFB3CC;
-    --p-deep: #D94F82;
-
-    --black: #080C09;
-    --near-black: #0F1A11;
-    --card-bg: rgba(15, 30, 18, 0.75);
-    --card-border: rgba(107, 191, 128, 0.15);
-    --card-border-pink: rgba(255, 107, 157, 0.2);
-
-    --text-primary: #E8F5EC;
-    --text-secondary: #8DB89A;
-    --text-muted: #506858;
-
-    --glow-green: 0 0 30px rgba(107,191,128,0.25);
-    --glow-pink: 0 0 30px rgba(255,107,157,0.25);
-    --shadow-deep: 0 24px 64px rgba(0,0,0,0.6);
-
-    --glass: rgba(20, 40, 24, 0.6);
-    --glass-border: rgba(107,191,128,0.12);
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
+/* ===== RESET & BASE ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
     font-family: 'DM Sans', sans-serif;
-    background: var(--black);
-    color: var(--text-primary);
+    background: var(--cafe-white);
+    color: var(--cafe-espresso);
     min-height: 100vh;
     overflow-x: hidden;
-  }
+}
+h1,h2,h3,h4,h5 { font-family: 'Playfair Display', serif; }
 
-  /* ── Animated Background ── */
-  body::before {
-    content: '';
-    position: fixed; inset: 0; z-index: -2;
-    background:
-      radial-gradient(ellipse 70% 50% at 15% 10%, rgba(42,82,50,0.55) 0%, transparent 60%),
-      radial-gradient(ellipse 50% 70% at 85% 90%, rgba(26,51,32,0.45) 0%, transparent 60%),
-      radial-gradient(ellipse 40% 40% at 80% 15%, rgba(217,79,130,0.08) 0%, transparent 50%),
-      radial-gradient(ellipse 60% 40% at 20% 85%, rgba(255,107,157,0.06) 0%, transparent 50%),
-      var(--near-black);
-  }
-
-  /* Subtle noise texture */
-  body::after {
-    content: '';
-    position: fixed; inset: 0; z-index: -1;
-    opacity: 0.03;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-    pointer-events: none;
-  }
-
-  /* ── Typography ── */
-  .font-display { font-family: 'Playfair Display', serif; }
-
-  /* ── Sidebar ── */
-  #sidebar {
-    width: 272px; flex-shrink: 0;
-    background: rgba(8, 18, 10, 0.92);
-    backdrop-filter: blur(24px);
-    border-right: 1px solid var(--glass-border);
-    min-height: 100vh;
-    position: sticky; top: 0;
-    display: flex; flex-direction: column;
-    box-shadow: 4px 0 40px rgba(0,0,0,0.4);
-  }
-
-  .logo-area {
-    padding: 28px 24px 22px;
-    border-bottom: 1px solid rgba(107,191,128,0.1);
-    position: relative;
+/* ===== SIDEBAR ===== */
+.sidebar {
+    position: fixed;
+    top: 0; left: 0;
+    width: var(--sidebar-width);
+    height: 100vh;
+    background: var(--cafe-espresso);
+    background-image: linear-gradient(160deg, #2D1505 0%, #1C0A00 100%);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
-  }
-
-  .logo-area::before {
+    transition: var(--transition);
+}
+.sidebar::before {
     content: '';
-    position: absolute; top: -20px; right: -20px;
-    width: 100px; height: 100px;
-    background: radial-gradient(circle, rgba(255,107,157,0.12), transparent 70%);
+    position: absolute;
+    top: -80px; right: -80px;
+    width: 220px; height: 220px;
+    background: radial-gradient(circle, rgba(196,132,58,0.18) 0%, transparent 70%);
     border-radius: 50%;
-  }
-
-  .logo-icon {
-    width: 44px; height: 44px; border-radius: 14px;
-    background: linear-gradient(135deg, var(--g4), var(--p-deep));
-    display: flex; align-items: center; justify-content: center;
-    font-size: 20px;
-    box-shadow: 0 4px 20px rgba(107,191,128,0.3), 0 0 0 1px rgba(107,191,128,0.2);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-  }
-  .logo-icon:hover {
-    transform: rotate(-5deg) scale(1.05);
-    box-shadow: 0 8px 30px rgba(255,107,157,0.4), 0 0 0 1px rgba(255,107,157,0.3);
-  }
-
-  .nav-section-label {
-    padding: 16px 20px 6px;
-    font-size: 9px; font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.14em;
-  }
-
-  .nav-item {
-    display: flex; align-items: center; gap: 12px;
-    padding: 11px 16px; margin: 2px 10px; border-radius: 12px;
-    color: var(--text-secondary); font-size: 13.5px; font-weight: 400;
+    pointer-events: none;
+}
+.sidebar-brand {
+    padding: 28px 24px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.brand-logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     text-decoration: none;
-    cursor: pointer; border: none; background: transparent;
-    width: calc(100% - 20px); text-align: left;
-    position: relative; overflow: hidden;
-    transition: color 0.25s ease;
-  }
-
-  .nav-item::before {
-    content: '';
-    position: absolute; inset: 0; border-radius: 12px;
-    background: linear-gradient(135deg, rgba(107,191,128,0.08), rgba(255,107,157,0.06));
-    opacity: 0;
-    transition: opacity 0.25s ease;
-    transform: translateX(-100%);
-    transition: opacity 0.25s ease, transform 0.35s ease;
-  }
-
-  .nav-item:hover::before { opacity: 1; transform: translateX(0); }
-  .nav-item:hover {
-    color: var(--text-primary);
-    transform: translateX(4px);
-    transition: color 0.2s, transform 0.25s cubic-bezier(0.34,1.56,0.64,1);
-  }
-
-  .nav-item.active {
-    background: linear-gradient(135deg, rgba(107,191,128,0.15), rgba(255,107,157,0.1));
-    color: var(--text-primary); font-weight: 500;
-    border: 1px solid rgba(107,191,128,0.2);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(107,191,128,0.15);
-  }
-
-  .nav-item.active .nav-icon { filter: drop-shadow(0 0 6px rgba(107,191,128,0.6)); }
-
-  .nav-icon {
-    font-size: 17px; width: 22px; text-align: center;
-    transition: transform 0.25s ease, filter 0.25s ease;
-  }
-  .nav-item:hover .nav-icon { transform: scale(1.15); }
-
-  /* ── Glass Card ── */
-  .glass-card {
-    background: var(--card-bg);
-    backdrop-filter: blur(20px);
-    border: 1px solid var(--card-border);
-    border-radius: 20px;
-    box-shadow: var(--shadow-deep), inset 0 1px 0 rgba(107,191,128,0.08);
+}
+.brand-icon {
+    width: 44px; height: 44px;
+    background: linear-gradient(135deg, var(--cafe-caramel), var(--cafe-gold));
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 4px 14px rgba(196,132,58,0.35);
+    flex-shrink: 0;
+}
+.brand-text { line-height: 1.1; }
+.brand-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--cafe-cream);
+    letter-spacing: .5px;
+}
+.brand-sub {
+    font-size: 10px;
+    color: rgba(245,236,215,0.5);
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 500;
+}
+.sidebar-nav { padding: 20px 0; flex: 1; }
+.nav-label {
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: rgba(245,236,215,0.35);
+    padding: 0 24px 8px;
+    margin-top: 12px;
+}
+.nav-item { list-style: none; padding: 2px 12px; }
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 16px;
+    border-radius: var(--radius-sm);
+    color: rgba(245,236,215,0.65);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    transition: var(--transition);
     position: relative;
     overflow: hidden;
-    transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1),
-                box-shadow 0.4s ease,
-                border-color 0.4s ease;
-  }
-  .glass-card::before {
+}
+.nav-link::before {
     content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(107,191,128,0.3), rgba(255,107,157,0.2), transparent);
-    opacity: 0;
-    transition: opacity 0.4s ease;
-  }
-  .glass-card:hover {
-    transform: translateY(-5px);
-    box-shadow: var(--shadow-deep), var(--glow-green), inset 0 1px 0 rgba(107,191,128,0.15);
-    border-color: rgba(107,191,128,0.3);
-  }
-  .glass-card:hover::before { opacity: 1; }
-
-  /* ── Stat Cards ── */
-  .stat-card {
-    background: var(--card-bg);
-    backdrop-filter: blur(20px);
-    border: 1px solid var(--card-border);
-    border-radius: 22px; padding: 26px;
-    position: relative; overflow: hidden;
-    transition: all 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
-    cursor: default;
-  }
-
-  .stat-card::after {
-    content: '';
-    position: absolute; inset: 0; border-radius: 22px;
-    opacity: 0;
-    transition: opacity 0.4s ease;
-    pointer-events: none;
-  }
-
-  .stat-card:hover {
-    transform: translateY(-8px) scale(1.01);
-    border-color: rgba(107,191,128,0.35);
-    box-shadow: var(--shadow-deep), var(--glow-green);
-  }
-
-  .stat-card.pink:hover {
-    border-color: rgba(255,107,157,0.35);
-    box-shadow: var(--shadow-deep), var(--glow-pink);
-  }
-
-  .stat-orb {
     position: absolute;
+    left: 0; top: 50%;
+    transform: translateY(-50%);
+    width: 3px; height: 0;
+    background: var(--cafe-gold);
+    border-radius: 0 3px 3px 0;
+    transition: height .25s ease;
+}
+.nav-link:hover, .nav-link.active {
+    background: rgba(196,132,58,0.15);
+    color: var(--cafe-cream);
+}
+.nav-link:hover::before, .nav-link.active::before { height: 60%; }
+.nav-link.active { color: var(--cafe-gold); font-weight: 600; }
+.nav-icon { font-size: 17px; width: 20px; text-align: center; flex-shrink: 0; }
+.sidebar-footer {
+    padding: 16px 24px;
+    border-top: 1px solid rgba(255,255,255,0.07);
+}
+.sidebar-date {
+    font-size: 11px;
+    color: rgba(245,236,215,0.4);
+    text-align: center;
+    letter-spacing: .5px;
+}
+
+/* ===== MAIN CONTENT ===== */
+.main-content {
+    margin-left: var(--sidebar-width);
+    min-height: 100vh;
+    transition: var(--transition);
+}
+
+/* ===== TOPBAR ===== */
+.topbar {
+    height: var(--topbar-h);
+    background: rgba(253,248,240,0.95);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(107,58,42,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+.topbar-left { display: flex; align-items: center; gap: 14px; }
+.menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 22px;
+    cursor: pointer;
+    color: var(--cafe-brown);
+    padding: 4px;
+    line-height: 1;
+}
+.topbar-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--cafe-espresso);
+}
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.today-badge {
+    background: var(--cafe-latte);
+    color: var(--cafe-brown);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .3px;
+}
+.avatar {
+    width: 38px; height: 38px;
     border-radius: 50%;
-    filter: blur(24px);
-    transition: transform 0.5s ease, opacity 0.4s ease;
-    pointer-events: none;
-  }
-
-  .stat-card:hover .stat-orb { transform: scale(1.4); opacity: 0.9; }
-
-  .stat-badge {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 4px 11px; border-radius: 20px; font-size: 11px; font-weight: 500;
-    letter-spacing: 0.03em;
-  }
-
-  /* ── Icon Box ── */
-  .icon-box {
-    width: 44px; height: 44px; border-radius: 13px;
-    display: flex; align-items: center; justify-content: center; font-size: 19px;
-    transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.35s ease;
-  }
-  .stat-card:hover .icon-box {
-    transform: rotate(-8deg) scale(1.1);
-    box-shadow: 0 8px 20px rgba(107,191,128,0.35);
-  }
-  .stat-card.pink:hover .icon-box {
-    box-shadow: 0 8px 20px rgba(255,107,157,0.35);
-  }
-
-  /* ── Buttons ── */
-  .btn-primary {
-    background: linear-gradient(135deg, var(--g4) 0%, var(--g5) 50%, var(--g-accent) 100%);
-    background-size: 200% 200%;
-    color: #fff; border: none; border-radius: 13px;
-    padding: 11px 24px; font-family: 'DM Sans', sans-serif;
-    font-size: 13.5px; font-weight: 500; cursor: pointer;
-    box-shadow: 0 4px 20px rgba(74,144,96,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
-    transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1);
-    background-position: 100% 100%;
-    position: relative; overflow: hidden;
-    letter-spacing: 0.02em;
-  }
-
-  .btn-primary::before {
-    content: '';
-    position: absolute; inset: 0;
-    background: linear-gradient(135deg, rgba(255,255,255,0.1), transparent);
-    opacity: 0;
-    transition: opacity 0.25s;
-  }
-
-  .btn-primary:hover {
-    transform: translateY(-3px) scale(1.02);
-    box-shadow: 0 10px 35px rgba(74,144,96,0.55), 0 0 20px rgba(107,191,128,0.3);
-    background-position: 0% 0%;
-  }
-  .btn-primary:hover::before { opacity: 1; }
-  .btn-primary:active { transform: translateY(-1px) scale(0.99); }
-
-  .btn-pink {
-    background: linear-gradient(135deg, var(--p-deep), var(--p1), var(--p2));
-    background-size: 200% 200%;
-    color: #fff; border: none; border-radius: 13px;
-    padding: 11px 24px; font-family: 'DM Sans', sans-serif;
-    font-size: 13.5px; font-weight: 500; cursor: pointer;
-    box-shadow: 0 4px 20px rgba(217,79,130,0.4), inset 0 1px 0 rgba(255,255,255,0.1);
-    transition: all 0.35s cubic-bezier(0.34,1.56,0.64,1);
-    background-position: 100% 100%;
-    position: relative; overflow: hidden;
-  }
-  .btn-pink:hover {
-    transform: translateY(-3px) scale(1.02);
-    box-shadow: 0 10px 35px rgba(217,79,130,0.55), 0 0 20px rgba(255,107,157,0.3);
-    background-position: 0% 0%;
-  }
-  .btn-pink:active { transform: translateY(-1px) scale(0.99); }
-
-  .btn-ghost {
-    background: rgba(107,191,128,0.08);
-    color: var(--text-secondary);
-    border: 1px solid rgba(107,191,128,0.2); border-radius: 13px;
-    padding: 10px 20px; font-family: 'DM Sans', sans-serif;
-    font-size: 13px; font-weight: 400; cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
-    position: relative; overflow: hidden;
-  }
-  .btn-ghost::after {
-    content: '';
-    position: absolute; inset: 0;
-    background: linear-gradient(135deg, rgba(107,191,128,0.1), rgba(255,107,157,0.08));
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
-  .btn-ghost:hover {
-    color: var(--text-primary);
-    border-color: rgba(107,191,128,0.4);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-  }
-  .btn-ghost:hover::after { opacity: 1; }
-
-  .btn-danger {
-    background: rgba(192,57,43,0.1); color: #ff7979;
-    border: 1px solid rgba(192,57,43,0.25); border-radius: 10px;
-    padding: 6px 14px; font-size: 12px; cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
-    position: relative; overflow: hidden;
-  }
-  .btn-danger:hover {
-    background: rgba(192,57,43,0.22);
-    transform: translateY(-2px) scale(1.03);
-    box-shadow: 0 6px 16px rgba(192,57,43,0.3);
-    border-color: rgba(192,57,43,0.4);
-  }
-
-  .btn-edit {
-    background: rgba(107,191,128,0.1); color: var(--g-accent);
-    border: 1px solid rgba(107,191,128,0.25); border-radius: 10px;
-    padding: 6px 14px; font-size: 12px; cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
-    position: relative; overflow: hidden;
-  }
-  .btn-edit:hover {
-    background: rgba(107,191,128,0.2);
-    transform: translateY(-2px) scale(1.03);
-    box-shadow: 0 6px 16px rgba(107,191,128,0.25);
-    border-color: rgba(107,191,128,0.45);
-  }
-
-  /* ── Form Inputs ── */
-  .form-input {
-    width: 100%; padding: 11px 16px;
-    background: rgba(15,30,18,0.8); backdrop-filter: blur(8px);
-    border: 1px solid var(--glass-border); border-radius: 12px;
-    font-family: 'DM Sans', sans-serif; font-size: 14px;
-    color: var(--text-primary);
-    transition: all 0.3s ease; outline: none;
-  }
-  .form-input:focus {
-    border-color: var(--g-accent);
-    box-shadow: 0 0 0 3px rgba(107,191,128,0.12), 0 4px 12px rgba(0,0,0,0.3);
-    background: rgba(20,40,24,0.9);
-  }
-  .form-input::placeholder { color: var(--text-muted); }
-  .form-label {
-    display: block; font-size: 11px; font-weight: 600;
-    color: var(--text-muted); margin-bottom: 6px;
-    text-transform: uppercase; letter-spacing: 0.09em;
-  }
-
-  /* ── Table ── */
-  .data-table { width: 100%; border-collapse: separate; border-spacing: 0 5px; }
-  .data-table thead th {
-    padding: 10px 16px; text-align: left; font-size: 10px;
-    font-weight: 600; color: var(--text-muted); text-transform: uppercase;
-    letter-spacing: 0.09em; border-bottom: 1px solid var(--glass-border);
-  }
-  .data-table tbody tr {
-    background: rgba(15,30,18,0.5);
-    backdrop-filter: blur(8px);
-    transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
-  }
-  .data-table tbody tr:hover {
-    background: rgba(107,191,128,0.07);
-    transform: scale(1.005) translateX(4px);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-  }
-  .data-table tbody td {
-    padding: 13px 16px; font-size: 13.5px;
-    border-top: 1px solid rgba(107,191,128,0.06);
-    border-bottom: 1px solid rgba(107,191,128,0.06);
-    transition: color 0.2s ease;
-  }
-  .data-table tbody tr:hover td { color: var(--text-primary); }
-  .data-table tbody td:first-child { border-left: 1px solid rgba(107,191,128,0.06); border-radius: 11px 0 0 11px; }
-  .data-table tbody td:last-child  { border-right: 1px solid rgba(107,191,128,0.06); border-radius: 0 11px 11px 0; }
-
-  /* ── Modal ── */
-  .modal-overlay {
-    position: fixed; inset: 0; z-index: 50;
-    background: rgba(8,12,9,0.75); backdrop-filter: blur(10px);
+    background: linear-gradient(135deg, var(--cafe-caramel), var(--cafe-gold));
     display: flex; align-items: center; justify-content: center;
-    opacity: 0; pointer-events: none; transition: opacity 0.35s ease;
-  }
-  .modal-overlay.open { opacity: 1; pointer-events: all; }
-  .modal-box {
-    background: rgba(10,20,12,0.97); backdrop-filter: blur(30px);
-    border: 1px solid rgba(107,191,128,0.2); border-radius: 26px;
-    padding: 34px; width: 500px; max-width: 92vw;
-    box-shadow: var(--shadow-deep), var(--glow-green);
-    transform: translateY(24px) scale(0.96);
-    transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1);
-    position: relative; overflow: hidden;
-  }
-  .modal-box::before {
-    content: '';
-    position: absolute; top: -60px; right: -60px;
-    width: 200px; height: 200px;
-    background: radial-gradient(circle, rgba(255,107,157,0.07), transparent 70%);
-    border-radius: 50%;
-    pointer-events: none;
-  }
-  .modal-overlay.open .modal-box { transform: translateY(0) scale(1); }
+    font-size: 16px;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(196,132,58,0.3);
+    transition: var(--transition);
+}
+.avatar:hover { transform: scale(1.08); }
 
-  /* ── Toast ── */
-  #toast {
-    position: fixed; bottom: 30px; right: 30px; z-index: 100;
-    padding: 14px 22px; border-radius: 16px;
-    font-size: 13.5px; font-weight: 500; min-width: 260px;
-    transform: translateY(80px) scale(0.9); opacity: 0;
-    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-    pointer-events: none; letter-spacing: 0.02em;
-  }
-  #toast.show { transform: translateY(0) scale(1); opacity: 1; }
-  #toast.success {
-    background: linear-gradient(135deg, rgba(58,112,72,0.95), rgba(107,191,128,0.9));
-    color: #fff;
-    border: 1px solid rgba(107,191,128,0.4);
-    box-shadow: var(--shadow-deep), var(--glow-green);
-  }
-  #toast.error {
-    background: linear-gradient(135deg, rgba(180,50,80,0.95), rgba(220,80,100,0.9));
-    color: white;
-    border: 1px solid rgba(220,80,100,0.4);
-    box-shadow: var(--shadow-deep), 0 0 30px rgba(220,80,100,0.25);
-  }
+/* ===== PAGE CONTENT ===== */
+.page-content { padding: 28px 32px 40px; }
 
-  /* ── Section Transitions ── */
-  .page-section { display: none; }
-  .page-section.active { display: block; animation: pageFadeIn 0.5s ease both; }
-  @keyframes pageFadeIn {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  /* ── Divider ── */
-  .accent-divider {
-    height: 2px; width: 52px;
-    background: linear-gradient(90deg, var(--g-accent), var(--p1));
-    border-radius: 2px; margin: 6px 0 20px;
+/* ===== STATS CARDS ===== */
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 28px; }
+.stat-card {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-card);
     position: relative;
-  }
-  .accent-divider::after {
+    overflow: hidden;
+    transition: var(--transition);
+    border: 1px solid rgba(107,58,42,0.06);
+}
+.stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+.stat-card::after {
     content: '';
-    position: absolute; right: -8px; top: -2px;
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--p1);
-    box-shadow: 0 0 8px var(--p1);
-  }
-
-  /* ── Scrollbar ── */
-  ::-webkit-scrollbar { width: 5px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(107,191,128,0.25); border-radius: 3px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(107,191,128,0.45); }
-
-  /* ── Profit ── */
-  .profit-positive { color: var(--g-accent); }
-  .profit-negative { color: var(--p1); }
-
-  /* ── Quick action cards ── */
-  .quick-btn {
-    display: flex; align-items: center; gap: 10px;
-    padding: 14px 20px; border-radius: 16px;
-    font-family: 'DM Sans', sans-serif; font-size: 13.5px; font-weight: 500;
-    cursor: pointer; border: none;
-    transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1);
-    position: relative; overflow: hidden;
-  }
-
-  .quick-btn-green {
-    background: linear-gradient(135deg, rgba(42,82,50,0.8), rgba(58,112,72,0.6));
-    color: var(--g-accent);
-    border: 1px solid rgba(107,191,128,0.2);
-  }
-  .quick-btn-green:hover {
-    background: linear-gradient(135deg, rgba(42,82,50,1), rgba(78,144,96,0.8));
-    color: #fff;
-    transform: translateY(-4px) scale(1.02);
-    box-shadow: 0 12px 30px rgba(0,0,0,0.4), var(--glow-green);
-    border-color: rgba(107,191,128,0.4);
-  }
-
-  .quick-btn-pink {
-    background: linear-gradient(135deg, rgba(80,30,50,0.8), rgba(120,40,70,0.6));
-    color: var(--p2);
-    border: 1px solid rgba(255,107,157,0.2);
-  }
-  .quick-btn-pink:hover {
-    background: linear-gradient(135deg, rgba(140,50,90,1), rgba(200,70,120,0.8));
-    color: #fff;
-    transform: translateY(-4px) scale(1.02);
-    box-shadow: 0 12px 30px rgba(0,0,0,0.4), var(--glow-pink);
-    border-color: rgba(255,107,157,0.4);
-  }
-
-  .quick-btn-ghost {
-    background: rgba(255,255,255,0.03);
-    color: var(--text-secondary);
-    border: 1px solid var(--glass-border);
-  }
-  .quick-btn-ghost:hover {
-    background: rgba(107,191,128,0.08);
-    color: var(--text-primary);
-    transform: translateY(-4px) scale(1.02);
-    box-shadow: 0 12px 30px rgba(0,0,0,0.4);
-    border-color: rgba(107,191,128,0.3);
-  }
-
-  /* ── Mobile ── */
-  @media (max-width: 768px) {
-    #sidebar { display: none; }
-    #sidebar.mobile-open {
-      display: flex; position: fixed; left: 0; top: 0;
-      z-index: 40; height: 100vh;
-      box-shadow: 8px 0 40px rgba(0,0,0,0.6);
-    }
-    .stat-value { font-size: 1.6rem !important; }
-  }
-
-  /* Chart containers */
-  .chart-wrapper {
-    position: relative;
-    width: 100%;
-  }
-
-  /* Ripple effect on click */
-  .ripple {
     position: absolute;
-    border-radius: 50%;
-    transform: scale(0);
-    animation: ripple-anim 0.6s linear;
-    background-color: rgba(107,191,128,0.25);
-    pointer-events: none;
-  }
-  @keyframes ripple-anim {
-    to { transform: scale(4); opacity: 0; }
-  }
+    top: 0; left: 0; right: 0;
+    height: 3px;
+}
+.stat-card.pemasukan::after  { background: linear-gradient(90deg, #52b788, #74c69d); }
+.stat-card.pengeluaran::after { background: linear-gradient(90deg, #e07a5f, #f2ac99); }
+.stat-card.keuntungan::after  { background: linear-gradient(90deg, var(--cafe-caramel), var(--cafe-gold)); }
+.stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(28,10,0,0.45);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.stat-dot { width: 6px; height: 6px; border-radius: 50%; }
+.stat-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--cafe-espresso);
+    margin-bottom: 8px;
+    letter-spacing: -.5px;
+}
+.stat-sub { font-size: 12px; color: rgba(28,10,0,0.4); }
+.stat-icon {
+    position: absolute;
+    top: 20px; right: 20px;
+    font-size: 32px;
+    opacity: .12;
+}
+.stat-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 10px;
+    margin-top: 4px;
+}
+.stat-badge.up   { background: #d8f3dc; color: #2d6a4f; }
+.stat-badge.down { background: #ffe5d9; color: #9d0208; }
+.stat-badge.neutral { background: var(--cafe-latte); color: var(--cafe-brown); }
+
+/* ===== FILTER BAR ===== */
+.filter-bar {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-card);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    border: 1px solid rgba(107,58,42,0.06);
+}
+.filter-bar label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cafe-brown);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+}
+.filter-input {
+    height: 38px;
+    border: 1.5px solid var(--cafe-latte);
+    border-radius: var(--radius-sm);
+    padding: 0 12px;
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--cafe-espresso);
+    background: var(--cafe-white);
+    transition: var(--transition);
+}
+.filter-input:focus {
+    outline: none;
+    border-color: var(--cafe-caramel);
+    box-shadow: 0 0 0 3px rgba(196,132,58,0.12);
+}
+.btn-filter {
+    height: 38px;
+    padding: 0 20px;
+    background: linear-gradient(135deg, var(--cafe-caramel), var(--cafe-gold));
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: var(--transition);
+    letter-spacing: .3px;
+}
+.btn-filter:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(196,132,58,0.35); }
+.btn-reset {
+    height: 38px;
+    padding: 0 16px;
+    background: transparent;
+    color: var(--cafe-brown);
+    border: 1.5px solid var(--cafe-latte);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: var(--transition);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+}
+.btn-reset:hover { border-color: var(--cafe-caramel); color: var(--cafe-caramel); }
+
+/* ===== CHART CARD ===== */
+.chart-card {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-card);
+    margin-bottom: 28px;
+    border: 1px solid rgba(107,58,42,0.06);
+}
+.card-header-custom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+.card-title-custom {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--cafe-espresso);
+}
+.chart-legend {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: rgba(28,10,0,0.6);
+    font-weight: 500;
+}
+.legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 3px;
+}
+
+/* ===== DATA TABLES SECTION ===== */
+.tables-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-bottom: 28px;
+}
+.table-card {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-card);
+    overflow: hidden;
+    border: 1px solid rgba(107,58,42,0.06);
+}
+.table-card-header {
+    padding: 20px 24px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+.table-section-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--cafe-espresso);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.table-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 12px;
+    font-family: 'DM Sans', sans-serif;
+}
+.badge-green { background: #d8f3dc; color: #2d6a4f; }
+.badge-red   { background: #ffe5d9; color: #9d0208; }
+.table-scroll { overflow-x: auto; max-height: 360px; overflow-y: auto; }
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.data-table thead th {
+    background: var(--cafe-cream);
+    color: var(--cafe-brown);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 11px 16px;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.data-table tbody td {
+    padding: 11px 16px;
+    border-bottom: 1px solid rgba(107,58,42,0.06);
+    color: var(--cafe-espresso);
+    vertical-align: middle;
+}
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover { background: rgba(245,236,215,0.4); }
+.amount-cell { font-weight: 600; font-size: 13px; white-space: nowrap; }
+.amount-green { color: #2d6a4f; }
+.amount-red   { color: #9d0208; }
+.desc-cell {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(28,10,0,0.55);
+    font-size: 12px;
+}
+.btn-action {
+    padding: 4px 10px;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: var(--transition);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    line-height: 1.5;
+}
+.btn-edit { background: rgba(196,132,58,0.12); color: var(--cafe-brown); }
+.btn-edit:hover { background: var(--cafe-caramel); color: #fff; }
+.btn-del  { background: rgba(224,122,95,0.12); color: #c1440e; }
+.btn-del:hover { background: #e07a5f; color: #fff; }
+.empty-row td { text-align: center; padding: 28px; color: rgba(28,10,0,0.3); font-size: 13px; }
+
+/* ===== FORM SECTION ===== */
+.forms-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+.form-card {
+    background: #fff;
+    border-radius: var(--radius-lg);
+    padding: 28px;
+    box-shadow: var(--shadow-card);
+    border: 1px solid rgba(107,58,42,0.06);
+}
+.form-card-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--cafe-espresso);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.form-icon {
+    width: 34px; height: 34px;
+    border-radius: var(--radius-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+}
+.form-icon.green { background: #d8f3dc; }
+.form-icon.red   { background: #ffe5d9; }
+.form-group { margin-bottom: 16px; }
+.form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--cafe-brown);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 6px;
+}
+.form-control-custom {
+    width: 100%;
+    height: 42px;
+    border: 1.5px solid var(--cafe-latte);
+    border-radius: var(--radius-sm);
+    padding: 0 14px;
+    font-size: 14px;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--cafe-espresso);
+    background: var(--cafe-white);
+    transition: var(--transition);
+}
+textarea.form-control-custom {
+    height: auto;
+    padding: 10px 14px;
+    resize: none;
+}
+.form-control-custom:focus {
+    outline: none;
+    border-color: var(--cafe-caramel);
+    box-shadow: 0 0 0 3px rgba(196,132,58,0.12);
+}
+.form-control-custom::placeholder { color: rgba(28,10,0,0.3); }
+.btn-submit {
+    width: 100%;
+    height: 44px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: var(--transition);
+    letter-spacing: .4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+.btn-submit.green {
+    background: linear-gradient(135deg, #52b788, #40916c);
+    color: #fff;
+}
+.btn-submit.red {
+    background: linear-gradient(135deg, #e07a5f, #c1440e);
+    color: #fff;
+}
+.btn-submit:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.15); }
+.btn-cancel {
+    width: 100%;
+    height: 38px;
+    background: transparent;
+    border: 1.5px solid var(--cafe-latte);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    color: var(--cafe-brown);
+    transition: var(--transition);
+    margin-top: 6px;
+    text-align: center;
+    display: block;
+    line-height: 36px;
+    text-decoration: none;
+}
+.btn-cancel:hover { border-color: var(--cafe-caramel); color: var(--cafe-caramel); }
+.form-editing-indicator {
+    background: rgba(196,132,58,0.1);
+    border: 1.5px solid rgba(196,132,58,0.3);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--cafe-caramel);
+    font-weight: 600;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* ===== SUMMARY TOTAL ROW ===== */
+.summary-row {
+    background: linear-gradient(135deg, var(--cafe-espresso), var(--cafe-dark));
+    border-radius: var(--radius-lg);
+    padding: 22px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-lg);
+}
+.summary-item { text-align: center; }
+.summary-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: rgba(245,236,215,0.5);
+    margin-bottom: 4px;
+    font-weight: 600;
+}
+.summary-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--cafe-cream);
+}
+.summary-divider { width: 1px; height: 44px; background: rgba(255,255,255,0.1); }
+.summary-profit { color: var(--cafe-gold); }
+
+/* ===== ALERTS ===== */
+.custom-alert {
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+    position: fixed;
+    top: 84px;
+    right: 24px;
+    z-index: 9999;
+    min-width: 280px;
+    max-width: 400px;
+    animation: slideIn .35s cubic-bezier(.4,0,.2,1);
+}
+.alert-success { background: #d8f3dc; color: #2d6a4f; }
+.alert-danger  { background: #ffe5d9; color: #9d0208; }
+.alert-icon { font-size: 16px; flex-shrink: 0; }
+@keyframes slideIn {
+    from { transform: translateX(120%); opacity: 0; }
+    to   { transform: translateX(0); opacity: 1; }
+}
+
+/* ===== MOBILE OVERLAY ===== */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 999;
+    backdrop-filter: blur(2px);
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 1200px) {
+    .tables-grid, .forms-grid { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: repeat(3,1fr); }
+}
+@media (max-width: 900px) {
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 768px) {
+    .sidebar {
+        transform: translateX(-100%);
+    }
+    .sidebar.open {
+        transform: translateX(0);
+        box-shadow: var(--shadow-lg);
+    }
+    .sidebar-overlay.show { display: block; }
+    .main-content { margin-left: 0; }
+    .menu-toggle { display: block; }
+    .page-content { padding: 20px 16px 32px; }
+    .topbar { padding: 0 16px; }
+    .stats-grid { grid-template-columns: 1fr; }
+    .summary-row { gap: 12px; }
+    .summary-divider { display: none; }
+    .filter-bar { gap: 10px; }
+    .topbar-title { font-size: 17px; }
+    .stat-value { font-size: 22px; }
+}
+
+/* ===== SCROLLBAR ===== */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--cafe-cream); }
+::-webkit-scrollbar-thumb { background: var(--cafe-mocha); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--cafe-brown); }
+
+/* ===== SECTION ANCHOR OFFSET ===== */
+.section-anchor { scroll-margin-top: 88px; }
 </style>
 </head>
 <body>
 
-<!-- Toast Notification -->
-<div id="toast"></div>
+<!-- Sidebar Overlay -->
+<div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
 
-<!-- Mobile backdrop -->
-<div id="mobile-backdrop" class="fixed inset-0 z-30" style="background:rgba(0,0,0,0.5); display:none;" onclick="closeSidebar()"></div>
-
-<div class="flex" style="min-height:100vh;">
-
-  <!-- ══ SIDEBAR ══ -->
-  <aside id="sidebar">
-    <!-- Logo -->
-    <div class="logo-area">
-      <div class="flex items-center gap-3 mb-1">
-        <div class="logo-icon">🌿</div>
-        <div>
-          <div class="font-display text-xl font-semibold" style="color:var(--text-primary); line-height:1.1;">Nada &amp; Cafe</div>
-          <div style="font-size:9px; color:var(--text-muted); letter-spacing:0.15em; text-transform:uppercase;">Finance Dashboard</div>
-        </div>
-      </div>
+<!-- ===== SIDEBAR ===== -->
+<aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+        <a href="index.php" class="brand-logo">
+            <div class="brand-icon">☕</div>
+            <div class="brand-text">
+                <div class="brand-name">Jawa Prime</div>
+                <div class="brand-sub">Cafe Finance</div>
+            </div>
+        </a>
     </div>
-
-    <!-- Nav -->
-    <nav class="flex-1 py-4 overflow-y-auto">
-      <div class="nav-section-label">Menu Utama</div>
-
-      <button class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
-        <span class="nav-icon">📊</span> Dashboard
-      </button>
-      <button class="nav-item" id="nav-penjualan" onclick="showPage('penjualan')">
-        <span class="nav-icon">💰</span> Penjualan
-      </button>
-      <button class="nav-item" id="nav-operasional" onclick="showPage('operasional')">
-        <span class="nav-icon">📋</span> Operasional
-      </button>
-      <button class="nav-item" id="nav-laporan" onclick="showPage('laporan')">
-        <span class="nav-icon">📈</span> Laporan &amp; Analitik
-      </button>
-
-      <div class="nav-section-label" style="margin-top:8px;">Lainnya</div>
-      <button class="nav-item" id="nav-settings" onclick="showPage('settings')">
-        <span class="nav-icon">⚙️</span> Pengaturan
-      </button>
+    <nav class="sidebar-nav">
+        <div class="nav-label">Main</div>
+        <ul style="list-style:none;padding:0">
+            <li class="nav-item">
+                <a href="index.php" class="nav-link active">
+                    <span class="nav-icon">📊</span> Dashboard
+                </a>
+            </li>
+        </ul>
+        <div class="nav-label">Transaksi</div>
+        <ul style="list-style:none;padding:0">
+            <li class="nav-item">
+                <a href="#penjualan" class="nav-link">
+                    <span class="nav-icon">💰</span> Penjualan
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#operasional" class="nav-link">
+                    <span class="nav-icon">🧾</span> Operasional
+                </a>
+            </li>
+        </ul>
+        <div class="nav-label">Laporan</div>
+        <ul style="list-style:none;padding:0">
+            <li class="nav-item">
+                <a href="#chart-section" class="nav-link">
+                    <span class="nav-icon">📈</span> Grafik
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="#summary-section" class="nav-link">
+                    <span class="nav-icon">🧮</span> Ringkasan
+                </a>
+            </li>
+        </ul>
     </nav>
-
-    <!-- Bottom -->
-    <div style="padding:18px 20px; border-top:1px solid var(--glass-border);">
-      <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em; margin-bottom:4px;">Hari ini</div>
-      <div style="font-size:13px; font-weight:500; color:var(--text-secondary);">
-        <?= date('l, d F Y') ?>
-      </div>
-      <div style="margin-top:12px; height:3px; border-radius:3px; background:linear-gradient(90deg, var(--g4), var(--p1)); box-shadow: 0 0 8px rgba(107,191,128,0.4);"></div>
+    <div class="sidebar-footer">
+        <div class="sidebar-date">📅 <?= date('d F Y') ?></div>
     </div>
-  </aside>
+</aside>
 
-  <!-- ══ MAIN CONTENT ══ -->
-  <main class="flex-1 overflow-y-auto" style="min-width:0;">
-
-    <!-- Top Bar -->
-    <header style="padding:18px 32px; background:rgba(8,12,9,0.85); backdrop-filter:blur(20px); border-bottom:1px solid var(--glass-border); position:sticky; top:0; z-index:20; display:flex; align-items:center; justify-content:space-between;">
-      <div class="flex items-center gap-4">
-        <button style="display:none;" class="btn-ghost" id="mobile-menu-btn" onclick="toggleSidebar()" style="padding:9px 13px; font-size:18px;">☰</button>
-        <div>
-          <div id="page-title" class="font-display text-2xl font-semibold" style="color:var(--text-primary); letter-spacing:-0.01em;">Dashboard</div>
-          <div id="page-sub" style="font-size:12px; color:var(--text-muted); margin-top:1px;">Ringkasan keuangan hari ini</div>
+<!-- ===== MAIN CONTENT ===== -->
+<main class="main-content">
+    <!-- Topbar -->
+    <div class="topbar">
+        <div class="topbar-left">
+            <button class="menu-toggle" onclick="toggleSidebar()">☰</button>
+            <span class="topbar-title">Dashboard Keuangan</span>
         </div>
-      </div>
-      <div class="flex items-center gap-3">
-        <button class="btn-primary" onclick="showPage('penjualan'); setTimeout(()=>openModal('modal-add-penjualan'),100)">
-          + Tambah Data
-        </button>
-      </div>
-    </header>
-
-    <div style="padding:28px 32px;">
-
-      <!-- ════════════ DASHBOARD PAGE ════════════ -->
-      <section id="page-dashboard" class="page-section active">
-
-        <!-- Stat Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
-
-          <!-- Penjualan -->
-          <div class="stat-card">
-            <div class="stat-orb" style="width:130px; height:130px; top:-40px; right:-40px; background:radial-gradient(circle, rgba(107,191,128,0.2), transparent 70%);"></div>
-            <div class="flex items-start justify-between mb-5">
-              <div>
-                <p style="font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em;">Total Penjualan</p>
-                <p style="font-size:11px; color:var(--text-secondary); margin-top:3px;">Hari Ini</p>
-              </div>
-              <div class="icon-box" style="background:linear-gradient(135deg,rgba(42,82,50,0.8),rgba(107,191,128,0.3)); border:1px solid rgba(107,191,128,0.2);">☕</div>
-            </div>
-            <div class="font-display stat-value" style="font-size:2rem; font-weight:700; color:var(--text-primary); margin-bottom:12px; letter-spacing:-0.02em;">
-              <?= formatRupiah($stats['penjualan']) ?>
-            </div>
-            <span class="stat-badge" style="background:rgba(107,191,128,0.12); color:var(--g-accent); border:1px solid rgba(107,191,128,0.2);">
-              ↑ Pemasukan
-            </span>
-          </div>
-
-          <!-- Operasional -->
-          <div class="stat-card pink">
-            <div class="stat-orb" style="width:130px; height:130px; top:-40px; right:-40px; background:radial-gradient(circle, rgba(255,107,157,0.18), transparent 70%);"></div>
-            <div class="flex items-start justify-between mb-5">
-              <div>
-                <p style="font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em;">Total Pengeluaran</p>
-                <p style="font-size:11px; color:var(--text-secondary); margin-top:3px;">Operasional Hari Ini</p>
-              </div>
-              <div class="icon-box" style="background:linear-gradient(135deg,rgba(80,30,50,0.8),rgba(255,107,157,0.25)); border:1px solid rgba(255,107,157,0.2);">🧾</div>
-            </div>
-            <div class="font-display stat-value" style="font-size:2rem; font-weight:700; color:var(--text-primary); margin-bottom:12px; letter-spacing:-0.02em;">
-              <?= formatRupiah($stats['operasional']) ?>
-            </div>
-            <span class="stat-badge" style="background:rgba(255,107,157,0.1); color:var(--p1); border:1px solid rgba(255,107,157,0.2);">
-              ↓ Pengeluaran
-            </span>
-          </div>
-
-          <!-- Profit -->
-          <div class="stat-card" style="background:linear-gradient(135deg, rgba(20,45,25,0.9), rgba(40,70,45,0.7));">
-            <div class="stat-orb" style="width:160px; height:160px; top:-50px; right:-50px; background:radial-gradient(circle, rgba(107,191,128,0.25), rgba(255,107,157,0.1) 60%, transparent 80%);"></div>
-            <div class="flex items-start justify-between mb-5">
-              <div>
-                <p style="font-size:10px; font-weight:600; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.1em;">Profit Bersih</p>
-                <p style="font-size:11px; color:var(--text-secondary); margin-top:3px;">Penjualan − Operasional</p>
-              </div>
-              <div class="icon-box" style="background:linear-gradient(135deg,var(--g3),var(--p-deep)); border:1px solid rgba(107,191,128,0.3); box-shadow:0 4px 16px rgba(107,191,128,0.25);">✨</div>
-            </div>
-            <div class="font-display stat-value <?= $stats['profit'] >= 0 ? 'profit-positive' : 'profit-negative' ?>" style="font-size:2rem; font-weight:700; margin-bottom:12px; letter-spacing:-0.02em;">
-              <?= formatRupiah($stats['profit']) ?>
-            </div>
-            <span class="stat-badge" style="background:rgba(255,255,255,0.07); color:var(--text-secondary); border:1px solid rgba(255,255,255,0.1);">
-              <?= $stats['profit'] >= 0 ? '🌟 Profit' : '⚠️ Rugi' ?> Hari Ini
-            </span>
-          </div>
+        <div class="topbar-right">
+            <span class="today-badge">📅 <?= date('d M Y') ?></span>
+            <div class="avatar" title="Admin">👤</div>
         </div>
+    </div>
 
-        <!-- Chart & Bulan -->
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-8">
-          <!-- Chart 7 Hari -->
-          <div class="glass-card lg:col-span-2" style="padding:26px;">
-            <div class="flex items-center justify-between mb-4">
-              <div>
-                <h3 class="font-display text-xl font-semibold" style="color:var(--text-primary); letter-spacing:-0.01em;">Performa 7 Hari</h3>
-                <div class="accent-divider"></div>
-              </div>
-              <div style="font-size:11px; color:var(--text-muted); background:rgba(107,191,128,0.08); padding:5px 12px; border-radius:20px; border:1px solid var(--glass-border);">Pemasukan vs Pengeluaran</div>
-            </div>
-            <div class="chart-wrapper">
-              <canvas id="chart-weekly"></canvas>
-            </div>
-          </div>
+    <!-- Page Content -->
+    <div class="page-content">
 
-          <!-- Ringkasan Bulan Ini -->
-          <div class="glass-card" style="padding:26px;">
-            <h3 class="font-display text-xl font-semibold" style="color:var(--text-primary); letter-spacing:-0.01em;">Bulan Ini</h3>
-            <div class="accent-divider"></div>
-            <?php
-              $thisMonth = date('m'); $thisYear = date('Y');
-              $pdo = getConnection();
-              $sp = $pdo->prepare("SELECT COALESCE(SUM(nominal_penjualan),0) FROM tabel_penjualan WHERE MONTH(tanggal)=? AND YEAR(tanggal)=?");
-              $sp->execute([$thisMonth, $thisYear]);
-              $mP = (float)$sp->fetchColumn();
-              $so = $pdo->prepare("SELECT COALESCE(SUM(nominal_operasional),0) FROM tabel_operasional WHERE MONTH(tanggal)=? AND YEAR(tanggal)=?");
-              $so->execute([$thisMonth, $thisYear]);
-              $mO = (float)$so->fetchColumn();
-              $mProfit = $mP - $mO;
-            ?>
-            <div>
-              <div style="padding:14px 0; border-bottom:1px solid var(--glass-border);">
-                <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.09em; margin-bottom:6px;">Penjualan</div>
-                <div class="font-display text-xl font-semibold profit-positive"><?= formatRupiah($mP) ?></div>
-              </div>
-              <div style="padding:14px 0; border-bottom:1px solid var(--glass-border);">
-                <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.09em; margin-bottom:6px;">Operasional</div>
-                <div class="font-display text-xl font-semibold profit-negative"><?= formatRupiah($mO) ?></div>
-              </div>
-              <div style="padding:14px 0;">
-                <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.09em; margin-bottom:6px;">Net Profit</div>
-                <div class="font-display text-2xl font-bold <?= $mProfit >= 0 ? 'profit-positive' : 'profit-negative' ?>" style="text-shadow:<?= $mProfit >= 0 ? '0 0 20px rgba(107,191,128,0.4)' : '0 0 20px rgba(255,107,157,0.4)' ?>">
-                  <?= formatRupiah($mProfit) ?>
+        <!-- Flash Messages -->
+        <?= flashMessage('success') ?>
+        <?= flashMessage('error') ?>
+
+        <!-- ===== STATS CARDS (TODAY) ===== -->
+        <div class="stats-grid">
+            <div class="stat-card pemasukan">
+                <span class="stat-icon">💰</span>
+                <div class="stat-label">
+                    <span class="stat-dot" style="background:#52b788"></span>
+                    Penjualan Hari Ini
                 </div>
-              </div>
+                <div class="stat-value"><?= formatRupiah($todayPenjualan) ?></div>
+                <div class="stat-sub">Total pendapatan hari ini</div>
+                <?php if ($todayPenjualan > 0): ?>
+                <span class="stat-badge up">▲ Aktif</span>
+                <?php else: ?>
+                <span class="stat-badge neutral">— Belum ada data</span>
+                <?php endif; ?>
             </div>
-          </div>
-        </div>
-
-        <!-- Quick Actions -->
-        <div class="glass-card" style="padding:24px;">
-          <h3 class="font-display text-lg font-semibold" style="color:var(--text-primary); margin-bottom:16px; letter-spacing:-0.01em;">Aksi Cepat</h3>
-          <div class="flex flex-wrap gap-3">
-            <button class="quick-btn quick-btn-green" onclick="addRipple(event); showPage('penjualan'); setTimeout(()=>openModal('modal-add-penjualan'),100)">
-              <span style="font-size:16px;">💰</span> Tambah Penjualan
-            </button>
-            <button class="quick-btn quick-btn-pink" onclick="addRipple(event); showPage('operasional'); setTimeout(()=>openModal('modal-add-operasional'),100)">
-              <span style="font-size:16px;">🧾</span> Tambah Operasional
-            </button>
-            <button class="quick-btn quick-btn-ghost" onclick="addRipple(event); showPage('laporan')">
-              <span style="font-size:16px;">📈</span> Lihat Laporan
-            </button>
-          </div>
-        </div>
-
-      </section>
-
-      <!-- ════════════ PENJUALAN PAGE ════════════ -->
-      <section id="page-penjualan" class="page-section">
-
-        <div class="flex items-center justify-between mb-6">
-          <div>
-            <h2 class="font-display text-2xl font-semibold" style="color:var(--text-primary); letter-spacing:-0.01em;">Data Penjualan</h2>
-            <div class="accent-divider"></div>
-          </div>
-          <button class="btn-primary" onclick="openModal('modal-add-penjualan')">+ Tambah Penjualan</button>
-        </div>
-
-        <div class="glass-card" style="padding:20px; margin-bottom:20px;">
-          <div class="flex flex-wrap gap-4 items-end">
-            <div>
-              <label class="form-label">Dari Tanggal</label>
-              <input type="date" id="filter-p-from" class="form-input" style="width:165px;" value="<?= date('Y-m-01') ?>"/>
+            <div class="stat-card pengeluaran">
+                <span class="stat-icon">🧾</span>
+                <div class="stat-label">
+                    <span class="stat-dot" style="background:#e07a5f"></span>
+                    Operasional Hari Ini
+                </div>
+                <div class="stat-value"><?= formatRupiah($todayOperasional) ?></div>
+                <div class="stat-sub">Total pengeluaran hari ini</div>
+                <?php if ($todayOperasional > 0): ?>
+                <span class="stat-badge down">▼ Ada pengeluaran</span>
+                <?php else: ?>
+                <span class="stat-badge neutral">— Belum ada data</span>
+                <?php endif; ?>
             </div>
-            <div>
-              <label class="form-label">Sampai Tanggal</label>
-              <input type="date" id="filter-p-to" class="form-input" style="width:165px;" value="<?= $today ?>"/>
+            <div class="stat-card keuntungan">
+                <span class="stat-icon">✨</span>
+                <div class="stat-label">
+                    <span class="stat-dot" style="background:var(--cafe-caramel)"></span>
+                    Keuntungan Hari Ini
+                </div>
+                <div class="stat-value" style="<?= $todayKeuntungan >= 0 ? 'color:var(--cafe-caramel)' : 'color:#9d0208' ?>">
+                    <?= formatRupiah($todayKeuntungan) ?>
+                </div>
+                <div class="stat-sub">Penjualan − Operasional</div>
+                <?php if ($todayKeuntungan > 0): ?>
+                <span class="stat-badge up">▲ Profit</span>
+                <?php elseif ($todayKeuntungan < 0): ?>
+                <span class="stat-badge down">▼ Rugi</span>
+                <?php else: ?>
+                <span class="stat-badge neutral">— Break Even</span>
+                <?php endif; ?>
             </div>
-            <button class="btn-primary" onclick="loadPenjualan()">Filter</button>
-            <button class="btn-ghost" onclick="resetFilterP()">Reset</button>
-          </div>
         </div>
 
-        <div class="glass-card" style="padding:18px 24px; margin-bottom:20px; display:flex; gap:36px; flex-wrap:wrap; border-color:rgba(107,191,128,0.2);">
-          <div>
-            <span style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.09em;">Total Periode</span><br>
-            <span id="sum-p-total" class="font-display text-xl font-semibold profit-positive">Rp 0</span>
-          </div>
-          <div style="width:1px; background:var(--glass-border);"></div>
-          <div>
-            <span style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.09em;">Jumlah Transaksi</span><br>
-            <span id="sum-p-count" class="font-display text-xl font-semibold" style="color:var(--text-primary);">0</span>
-          </div>
-        </div>
-
-        <div class="glass-card" style="padding:20px; overflow-x:auto;">
-          <table class="data-table">
-            <thead>
-              <tr><th>No</th><th>Tanggal</th><th>Nominal</th><th>Keterangan</th><th>Aksi</th></tr>
-            </thead>
-            <tbody id="tbody-penjualan">
-              <tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Loading data...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- ════════════ OPERASIONAL PAGE ════════════ -->
-      <section id="page-operasional" class="page-section">
-
-        <div class="flex items-center justify-between mb-6">
-          <div>
-            <h2 class="font-display text-2xl font-semibold" style="color:var(--text-primary); letter-spacing:-0.01em;">Data Operasional</h2>
-            <div class="accent-divider"></div>
-          </div>
-          <button class="btn-pink" onclick="openModal('modal-add-operasional')">+ Tambah Operasional</button>
-        </div>
-
-        <div class="glass-card" style="padding:20px; margin-bottom:20px;">
-          <div class="flex flex-wrap gap-4 items-end">
-            <div>
-              <label class="form-label">Dari Tanggal</label>
-              <input type="date" id="filter-o-from" class="form-input" style="width:165px;" value="<?= date('Y-m-01') ?>"/>
+        <!-- ===== FILTER BAR ===== -->
+        <form class="filter-bar" method="GET" action="index.php">
+            <label>🔍 Filter Periode:</label>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <input type="date" name="filter_start" value="<?= h($filter_start) ?>" class="filter-input" placeholder="Dari tanggal">
+                <span style="color:var(--cafe-brown);font-weight:500;font-size:13px">s/d</span>
+                <input type="date" name="filter_end" value="<?= h($filter_end) ?>" class="filter-input" placeholder="Sampai tanggal">
             </div>
-            <div>
-              <label class="form-label">Sampai Tanggal</label>
-              <input type="date" id="filter-o-to" class="form-input" style="width:165px;" value="<?= $today ?>"/>
+            <button type="submit" class="btn-filter">Terapkan Filter</button>
+            <?php if ($filter_start || $filter_end): ?>
+            <a href="index.php" class="btn-reset">✕ Reset</a>
+            <?php endif; ?>
+            <?php if ($filter_start && $filter_end): ?>
+            <span style="font-size:12px;color:rgba(28,10,0,0.45);margin-left:4px">
+                Menampilkan: <?= formatDate($filter_start) ?> — <?= formatDate($filter_end) ?>
+            </span>
+            <?php endif; ?>
+        </form>
+
+        <!-- ===== SUMMARY AGGREGATION ===== -->
+        <div class="summary-row" id="summary-section">
+            <div class="summary-item">
+                <div class="summary-label">Total Penjualan</div>
+                <div class="summary-value"><?= formatRupiah($totalPenjualan) ?></div>
             </div>
-            <button class="btn-pink" onclick="loadOperasional()">Filter</button>
-            <button class="btn-ghost" onclick="resetFilterO()">Reset</button>
-          </div>
+            <div class="summary-divider"></div>
+            <div class="summary-item">
+                <div class="summary-label">Total Operasional</div>
+                <div class="summary-value"><?= formatRupiah($totalOperasional) ?></div>
+            </div>
+            <div class="summary-divider"></div>
+            <div class="summary-item">
+                <div class="summary-label">Total Keuntungan</div>
+                <div class="summary-value summary-profit"><?= formatRupiah($totalKeuntungan) ?></div>
+            </div>
+            <div class="summary-divider"></div>
+            <div class="summary-item">
+                <div class="summary-label">Margin Profit</div>
+                <div class="summary-value summary-profit"><?= $profitPercent ?>%</div>
+            </div>
         </div>
 
-        <div class="glass-card" style="padding:18px 24px; margin-bottom:20px; display:flex; gap:36px; flex-wrap:wrap; border-color:rgba(255,107,157,0.2);">
-          <div>
-            <span style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.09em;">Total Periode</span><br>
-            <span id="sum-o-total" class="font-display text-xl font-semibold profit-negative">Rp 0</span>
-          </div>
-          <div style="width:1px; background:var(--glass-border);"></div>
-          <div>
-            <span style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.09em;">Jumlah Transaksi</span><br>
-            <span id="sum-o-count" class="font-display text-xl font-semibold" style="color:var(--text-primary);">0</span>
-          </div>
+        <!-- ===== CHART ===== -->
+        <div class="chart-card" id="chart-section">
+            <div class="card-header-custom">
+                <div class="card-title-custom">📈 Grafik Pemasukan vs Pengeluaran (7 Hari)</div>
+                <div class="chart-legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#52b788"></div>
+                        Penjualan
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background:#e07a5f"></div>
+                        Operasional
+                    </div>
+                </div>
+            </div>
+            <canvas id="financeChart" height="90"></canvas>
         </div>
 
-        <div class="glass-card" style="padding:20px; overflow-x:auto;">
-          <table class="data-table">
-            <thead>
-              <tr><th>No</th><th>Tanggal</th><th>Nominal</th><th>Keterangan</th><th>Aksi</th></tr>
-            </thead>
-            <tbody id="tbody-operasional">
-              <tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Loading data...</td></tr>
-            </tbody>
-          </table>
+        <!-- ===== DATA TABLES ===== -->
+        <div class="tables-grid">
+            <!-- Tabel Penjualan -->
+            <div class="table-card" id="penjualan">
+                <div class="table-card-header section-anchor">
+                    <div class="table-section-title">
+                        💰 Riwayat Penjualan
+                        <span class="table-badge badge-green"><?= count($penjualanList) ?> data</span>
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Tanggal</th>
+                                <th>Nominal</th>
+                                <th>Keterangan</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php if (empty($penjualanList)): ?>
+                            <tr class="empty-row"><td colspan="5">📭 Belum ada data penjualan</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($penjualanList as $i => $row): ?>
+                            <tr>
+                                <td style="color:rgba(28,10,0,0.35);font-size:11px"><?= $i+1 ?></td>
+                                <td style="white-space:nowrap;font-size:12px"><?= formatDate($row['tanggal']) ?></td>
+                                <td class="amount-cell amount-green"><?= formatRupiah((float)$row['nominal_penjualan']) ?></td>
+                                <td class="desc-cell" title="<?= h($row['keterangan']) ?>"><?= h($row['keterangan'] ?: '—') ?></td>
+                                <td style="white-space:nowrap">
+                                    <a href="penjualan.php?action=edit&id=<?= $row['id_penjualan'] ?>" class="btn-action btn-edit">✏️</a>
+                                    <a href="penjualan.php?action=delete&id=<?= $row['id_penjualan'] ?>"
+                                       class="btn-action btn-del"
+                                       onclick="return confirm('Hapus data ini?')">🗑️</a>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tabel Operasional -->
+            <div class="table-card" id="operasional">
+                <div class="table-card-header section-anchor">
+                    <div class="table-section-title">
+                        🧾 Riwayat Operasional
+                        <span class="table-badge badge-red"><?= count($operasionalList) ?> data</span>
+                    </div>
+                </div>
+                <div class="table-scroll">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Tanggal</th>
+                                <th>Nominal</th>
+                                <th>Keterangan</th>
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <?php if (empty($operasionalList)): ?>
+                            <tr class="empty-row"><td colspan="5">📭 Belum ada data operasional</td></tr>
+                        <?php else: ?>
+                            <?php foreach ($operasionalList as $i => $row): ?>
+                            <tr>
+                                <td style="color:rgba(28,10,0,0.35);font-size:11px"><?= $i+1 ?></td>
+                                <td style="white-space:nowrap;font-size:12px"><?= formatDate($row['tanggal']) ?></td>
+                                <td class="amount-cell amount-red"><?= formatRupiah((float)$row['nominal_operasional']) ?></td>
+                                <td class="desc-cell" title="<?= h($row['keterangan']) ?>"><?= h($row['keterangan'] ?: '—') ?></td>
+                                <td style="white-space:nowrap">
+                                    <a href="operasional.php?action=edit&id=<?= $row['id_operasional'] ?>" class="btn-action btn-edit">✏️</a>
+                                    <a href="operasional.php?action=delete&id=<?= $row['id_operasional'] ?>"
+                                       class="btn-action btn-del"
+                                       onclick="return confirm('Hapus data ini?')">🗑️</a>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-      </section>
 
-      <!-- ════════════ LAPORAN PAGE ════════════ -->
-      <section id="page-laporan" class="page-section">
-        <div class="mb-6">
-          <h2 class="font-display text-2xl font-semibold" style="color:var(--text-primary); letter-spacing:-0.01em;">Laporan &amp; Analitik</h2>
-          <div class="accent-divider"></div>
+        <!-- ===== INPUT FORMS ===== -->
+        <div class="forms-grid">
+            <!-- Form Penjualan -->
+            <div class="form-card">
+                <div class="form-card-title">
+                    <span class="form-icon green">💰</span>
+                    <?= $editPenjualan ? 'Edit Data Penjualan' : 'Tambah Penjualan' ?>
+                </div>
+
+                <?php if ($editPenjualan): ?>
+                <div class="form-editing-indicator">
+                    ✏️ Mode Edit — ID #<?= $editPenjualan['id_penjualan'] ?>
+                </div>
+                <?php endif; ?>
+
+                <form method="POST" action="penjualan.php?action=<?= $editPenjualan ? 'update' : 'create' ?>"
+                      onsubmit="return validateForm(this, 'nominal_penjualan')">
+                    <?php if ($editPenjualan): ?>
+                    <input type="hidden" name="id" value="<?= $editPenjualan['id_penjualan'] ?>">
+                    <?php endif; ?>
+                    <div class="form-group">
+                        <label>Tanggal *</label>
+                        <input type="date" name="tanggal"
+                               value="<?= $editPenjualan ? h($editPenjualan['tanggal']) : date('Y-m-d') ?>"
+                               class="form-control-custom" required max="<?= date('Y-m-d') ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>Nominal Penjualan (Rp) *</label>
+                        <input type="number" name="nominal_penjualan" step="100" min="1"
+                               value="<?= $editPenjualan ? h($editPenjualan['nominal_penjualan']) : '' ?>"
+                               class="form-control-custom" placeholder="Contoh: 1500000" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Keterangan</label>
+                        <textarea name="keterangan" rows="2" class="form-control-custom"
+                                  placeholder="Deskripsi singkat penjualan..."><?= $editPenjualan ? h($editPenjualan['keterangan']) : '' ?></textarea>
+                    </div>
+                    <button type="submit" class="btn-submit green">
+                        <?= $editPenjualan ? '💾 Simpan Perubahan' : '+ Tambah Penjualan' ?>
+                    </button>
+                    <?php if ($editPenjualan): ?>
+                    <a href="index.php#penjualan" class="btn-cancel">✕ Batal</a>
+                    <?php endif; ?>
+                </form>
+            </div>
+
+            <!-- Form Operasional -->
+            <div class="form-card">
+                <div class="form-card-title">
+                    <span class="form-icon red">🧾</span>
+                    <?= $editOperasional ? 'Edit Data Operasional' : 'Tambah Operasional' ?>
+                </div>
+
+                <?php if ($editOperasional): ?>
+                <div class="form-editing-indicator">
+                    ✏️ Mode Edit — ID #<?= $editOperasional['id_operasional'] ?>
+                </div>
+                <?php endif; ?>
+
+                <form method="POST" action="operasional.php?action=<?= $editOperasional ? 'update' : 'create' ?>"
+                      onsubmit="return validateForm(this, 'nominal_operasional')">
+                    <?php if ($editOperasional): ?>
+                    <input type="hidden" name="id" value="<?= $editOperasional['id_operasional'] ?>">
+                    <?php endif; ?>
+                    <div class="form-group">
+                        <label>Tanggal *</label>
+                        <input type="date" name="tanggal"
+                               value="<?= $editOperasional ? h($editOperasional['tanggal']) : date('Y-m-d') ?>"
+                               class="form-control-custom" required max="<?= date('Y-m-d') ?>">
+                    </div>
+                    <div class="form-group">
+                        <label>Nominal Operasional (Rp) *</label>
+                        <input type="number" name="nominal_operasional" step="100" min="1"
+                               value="<?= $editOperasional ? h($editOperasional['nominal_operasional']) : '' ?>"
+                               class="form-control-custom" placeholder="Contoh: 500000" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Keterangan</label>
+                        <textarea name="keterangan" rows="2" class="form-control-custom"
+                                  placeholder="Deskripsi pengeluaran..."><?= $editOperasional ? h($editOperasional['keterangan']) : '' ?></textarea>
+                    </div>
+                    <button type="submit" class="btn-submit red">
+                        <?= $editOperasional ? '💾 Simpan Perubahan' : '+ Tambah Operasional' ?>
+                    </button>
+                    <?php if ($editOperasional): ?>
+                    <a href="index.php#operasional" class="btn-cancel">✕ Batal</a>
+                    <?php endif; ?>
+                </form>
+            </div>
         </div>
 
-        <div class="glass-card" style="padding:28px; margin-bottom:20px;">
-          <h3 class="font-display text-xl font-semibold" style="color:var(--text-primary); margin-bottom:4px; letter-spacing:-0.01em;">Performa 6 Bulan Terakhir</h3>
-          <p style="font-size:12.5px; color:var(--text-muted); margin-bottom:22px;">Perbandingan penjualan, operasional, dan profit bersih</p>
-          <div class="chart-wrapper">
-            <canvas id="chart-monthly"></canvas>
-          </div>
-        </div>
+    </div><!-- /page-content -->
+</main>
 
-        <div class="glass-card" style="padding:26px;">
-          <h3 class="font-display text-xl font-semibold" style="color:var(--text-primary); margin-bottom:18px; letter-spacing:-0.01em;">Ringkasan Bulanan</h3>
-          <div style="overflow-x:auto;">
-            <table class="data-table">
-              <thead>
-                <tr><th>Bulan</th><th>Penjualan</th><th>Operasional</th><th>Profit</th><th>Margin</th></tr>
-              </thead>
-              <tbody>
-                <?php foreach ($monthly as $row): ?>
-                <tr>
-                  <td style="font-weight:500; color:var(--text-primary);"><?= htmlspecialchars($row['label']) ?></td>
-                  <td class="profit-positive"><?= formatRupiah($row['penjualan']) ?></td>
-                  <td class="profit-negative"><?= formatRupiah($row['operasional']) ?></td>
-                  <td class="<?= $row['profit'] >= 0 ? 'profit-positive' : 'profit-negative' ?>" style="font-weight:600;">
-                    <?= formatRupiah($row['profit']) ?>
-                  </td>
-                  <td>
-                    <?php $margin = $row['penjualan'] > 0 ? round(($row['profit'] / $row['penjualan']) * 100, 1) : 0; ?>
-                    <span class="stat-badge" style="background:<?= $margin >= 0 ? 'rgba(107,191,128,0.12)' : 'rgba(255,107,157,0.12)' ?>; color:<?= $margin >= 0 ? 'var(--g-accent)' : 'var(--p1)' ?>; border:1px solid <?= $margin >= 0 ? 'rgba(107,191,128,0.25)' : 'rgba(255,107,157,0.25)' ?>">
-                      <?= $margin ?>%
-                    </span>
-                  </td>
-                </tr>
-                <?php endforeach; ?>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-      <!-- ════════════ SETTINGS PAGE ════════════ -->
-      <section id="page-settings" class="page-section">
-        <div class="mb-6">
-          <h2 class="font-display text-2xl font-semibold" style="color:var(--text-primary); letter-spacing:-0.01em;">Pengaturan</h2>
-          <div class="accent-divider"></div>
-        </div>
-        <div class="glass-card" style="padding:30px; max-width:600px;">
-          <h3 class="font-display text-lg font-semibold" style="margin-bottom:10px; color:var(--text-primary);">Informasi Aplikasi</h3>
-          <div style="font-size:13.5px; color:var(--text-secondary); line-height:2.0;">
-            <p><strong style="color:var(--text-muted);">Nama Bisnis:</strong> Nada &amp; Cafe</p>
-            <p><strong style="color:var(--text-muted);">Versi Sistem:</strong> 1.0.0</p>
-            <p><strong style="color:var(--text-muted);">Database:</strong> aura_finance (MySQL)</p>
-            <p><strong style="color:var(--text-muted);">Framework:</strong> PHP Native + Tailwind CSS + Chart.js</p>
-            <p><strong style="color:var(--text-muted);">Mata Uang:</strong> IDR (Rupiah)</p>
-          </div>
-          <div style="margin-top:22px; padding:16px 20px; background:rgba(107,191,128,0.06); border-radius:14px; border:1px solid rgba(107,191,128,0.15);">
-            <p style="font-size:12px; color:var(--text-muted);">💡 Untuk setup database, jalankan file <code style="color:var(--g-accent); background:rgba(107,191,128,0.1); padding:1px 6px; border-radius:4px;">setup.sql</code> di MySQL Anda, lalu sesuaikan kredensial di <code style="color:var(--p2); background:rgba(255,107,157,0.08); padding:1px 6px; border-radius:4px;">config/database.php</code>.</p>
-          </div>
-        </div>
-      </section>
-
-    </div>
-  </main>
-</div>
-
-<!-- ══ MODALS ══ -->
-
-<!-- Add Penjualan -->
-<div class="modal-overlay" id="modal-add-penjualan">
-  <div class="modal-box">
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h3 class="font-display text-2xl font-semibold" style="color:var(--text-primary);">Tambah Penjualan</h3>
-        <div class="accent-divider" style="margin-bottom:0;"></div>
-      </div>
-      <button onclick="closeModal('modal-add-penjualan')" style="font-size:20px; background:rgba(107,191,128,0.1); border:1px solid var(--glass-border); border-radius:10px; width:36px; height:36px; cursor:pointer; color:var(--text-muted); display:flex; align-items:center; justify-content:center; transition:all 0.25s;" onmouseover="this.style.background='rgba(255,107,157,0.15)'; this.style.color='var(--p1)'" onmouseout="this.style.background='rgba(107,191,128,0.1)'; this.style.color='var(--text-muted)'">✕</button>
-    </div>
-    <div style="display:flex; flex-direction:column; gap:18px;">
-      <div>
-        <label class="form-label">Tanggal *</label>
-        <input type="date" id="ap-tanggal" class="form-input" value="<?= $today ?>"/>
-      </div>
-      <div>
-        <label class="form-label">Nominal Penjualan (Rp) *</label>
-        <input type="number" id="ap-nominal" class="form-input" placeholder="Contoh: 1500000" min="1"/>
-      </div>
-      <div>
-        <label class="form-label">Keterangan *</label>
-        <input type="text" id="ap-keterangan" class="form-input" placeholder="Contoh: Penjualan minuman harian"/>
-      </div>
-      <div class="flex gap-3 justify-end" style="margin-top:4px;">
-        <button class="btn-ghost" onclick="closeModal('modal-add-penjualan')">Batal</button>
-        <button class="btn-primary" onclick="submitAddPenjualan()">Simpan Data</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Edit Penjualan -->
-<div class="modal-overlay" id="modal-edit-penjualan">
-  <div class="modal-box">
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h3 class="font-display text-2xl font-semibold" style="color:var(--text-primary);">Edit Penjualan</h3>
-        <div class="accent-divider" style="margin-bottom:0;"></div>
-      </div>
-      <button onclick="closeModal('modal-edit-penjualan')" style="font-size:20px; background:rgba(107,191,128,0.1); border:1px solid var(--glass-border); border-radius:10px; width:36px; height:36px; cursor:pointer; color:var(--text-muted); display:flex; align-items:center; justify-content:center; transition:all 0.25s;" onmouseover="this.style.background='rgba(255,107,157,0.15)'; this.style.color='var(--p1)'" onmouseout="this.style.background='rgba(107,191,128,0.1)'; this.style.color='var(--text-muted)'">✕</button>
-    </div>
-    <input type="hidden" id="ep-id"/>
-    <div style="display:flex; flex-direction:column; gap:18px;">
-      <div><label class="form-label">Tanggal *</label><input type="date" id="ep-tanggal" class="form-input"/></div>
-      <div><label class="form-label">Nominal Penjualan (Rp) *</label><input type="number" id="ep-nominal" class="form-input" min="1"/></div>
-      <div><label class="form-label">Keterangan *</label><input type="text" id="ep-keterangan" class="form-input"/></div>
-      <div class="flex gap-3 justify-end" style="margin-top:4px;">
-        <button class="btn-ghost" onclick="closeModal('modal-edit-penjualan')">Batal</button>
-        <button class="btn-primary" onclick="submitEditPenjualan()">Update Data</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Add Operasional -->
-<div class="modal-overlay" id="modal-add-operasional">
-  <div class="modal-box">
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h3 class="font-display text-2xl font-semibold" style="color:var(--text-primary);">Tambah Operasional</h3>
-        <div class="accent-divider" style="margin-bottom:0;"></div>
-      </div>
-      <button onclick="closeModal('modal-add-operasional')" style="font-size:20px; background:rgba(107,191,128,0.1); border:1px solid var(--glass-border); border-radius:10px; width:36px; height:36px; cursor:pointer; color:var(--text-muted); display:flex; align-items:center; justify-content:center; transition:all 0.25s;" onmouseover="this.style.background='rgba(255,107,157,0.15)'; this.style.color='var(--p1)'" onmouseout="this.style.background='rgba(107,191,128,0.1)'; this.style.color='var(--text-muted)'">✕</button>
-    </div>
-    <div style="display:flex; flex-direction:column; gap:18px;">
-      <div><label class="form-label">Tanggal *</label><input type="date" id="ao-tanggal" class="form-input" value="<?= $today ?>"/></div>
-      <div><label class="form-label">Nominal Pengeluaran (Rp) *</label><input type="number" id="ao-nominal" class="form-input" placeholder="Contoh: 500000" min="1"/></div>
-      <div><label class="form-label">Keterangan *</label><input type="text" id="ao-keterangan" class="form-input" placeholder="Contoh: Bahan baku harian"/></div>
-      <div class="flex gap-3 justify-end" style="margin-top:4px;">
-        <button class="btn-ghost" onclick="closeModal('modal-add-operasional')">Batal</button>
-        <button class="btn-pink" onclick="submitAddOperasional()">Simpan Data</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Edit Operasional -->
-<div class="modal-overlay" id="modal-edit-operasional">
-  <div class="modal-box">
-    <div class="flex items-center justify-between mb-6">
-      <div>
-        <h3 class="font-display text-2xl font-semibold" style="color:var(--text-primary);">Edit Operasional</h3>
-        <div class="accent-divider" style="margin-bottom:0;"></div>
-      </div>
-      <button onclick="closeModal('modal-edit-operasional')" style="font-size:20px; background:rgba(107,191,128,0.1); border:1px solid var(--glass-border); border-radius:10px; width:36px; height:36px; cursor:pointer; color:var(--text-muted); display:flex; align-items:center; justify-content:center; transition:all 0.25s;" onmouseover="this.style.background='rgba(255,107,157,0.15)'; this.style.color='var(--p1)'" onmouseout="this.style.background='rgba(107,191,128,0.1)'; this.style.color='var(--text-muted)'">✕</button>
-    </div>
-    <input type="hidden" id="eo-id"/>
-    <div style="display:flex; flex-direction:column; gap:18px;">
-      <div><label class="form-label">Tanggal *</label><input type="date" id="eo-tanggal" class="form-input"/></div>
-      <div><label class="form-label">Nominal Pengeluaran (Rp) *</label><input type="number" id="eo-nominal" class="form-input" min="1"/></div>
-      <div><label class="form-label">Keterangan *</label><input type="text" id="eo-keterangan" class="form-input"/></div>
-      <div class="flex gap-3 justify-end" style="margin-top:4px;">
-        <button class="btn-ghost" onclick="closeModal('modal-edit-operasional')">Batal</button>
-        <button class="btn-pink" onclick="submitEditOperasional()">Update Data</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══ JavaScript ══ -->
 <script>
-const API   = 'api.php';
-const TODAY = '<?= $today ?>';
-
-// Chart.js global dark theme defaults
-Chart.defaults.color = '#8DB89A';
-Chart.defaults.borderColor = 'rgba(107,191,128,0.1)';
-Chart.defaults.font.family = 'DM Sans';
-
-// ─── Ripple Effect ────────────────────────────────────────────
-function addRipple(e) {
-  const btn = e.currentTarget;
-  const circle = document.createElement('span');
-  const diameter = Math.max(btn.clientWidth, btn.clientHeight);
-  const radius = diameter / 2;
-  const rect = btn.getBoundingClientRect();
-  circle.style.width = circle.style.height = `${diameter}px`;
-  circle.style.left = `${e.clientX - rect.left - radius}px`;
-  circle.style.top  = `${e.clientY - rect.top - radius}px`;
-  circle.classList.add('ripple');
-  btn.style.position = 'relative';
-  btn.appendChild(circle);
-  circle.addEventListener('animationend', () => circle.remove());
-}
-
-// ─── Navigation ───────────────────────────────────────────────
-const pageTitles = {
-  dashboard:   ['Dashboard', 'Ringkasan keuangan hari ini'],
-  penjualan:   ['Data Penjualan', 'Kelola catatan penjualan harian'],
-  operasional: ['Data Operasional', 'Kelola catatan pengeluaran'],
-  laporan:     ['Laporan & Analitik', 'Visualisasi performa keuangan'],
-  settings:    ['Pengaturan', 'Konfigurasi sistem'],
-};
-
-function showPage(name) {
-  document.querySelectorAll('.page-section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('page-' + name)?.classList.add('active');
-  document.getElementById('nav-' + name)?.classList.add('active');
-  const [title, sub] = pageTitles[name] || [name, ''];
-  document.getElementById('page-title').textContent = title;
-  document.getElementById('page-sub').textContent = sub;
-  if (name === 'penjualan')   loadPenjualan();
-  if (name === 'operasional') loadOperasional();
-  if (name === 'laporan')     initMonthlyChart();
-  closeSidebar();
-}
-
-// ─── Mobile Sidebar ───────────────────────────────────────────
+// ===== SIDEBAR TOGGLE =====
 function toggleSidebar() {
-  const sb = document.getElementById('sidebar');
-  const bd = document.getElementById('mobile-backdrop');
-  sb.classList.toggle('mobile-open');
-  bd.style.display = sb.classList.contains('mobile-open') ? 'block' : 'none';
-}
-function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('mobile-open');
-  document.getElementById('mobile-backdrop').style.display = 'none';
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('show');
 }
 
-// Mobile menu button visibility
-if (window.innerWidth <= 768) {
-  document.getElementById('mobile-menu-btn').style.display = '';
+// ===== FORM VALIDATION =====
+function validateForm(form, nominalField) {
+    const nominal = parseFloat(form[nominalField].value);
+    if (isNaN(nominal) || nominal <= 0) {
+        alert('Nominal harus berupa angka positif lebih dari 0!');
+        form[nominalField].focus();
+        return false;
+    }
+    const tanggal = form.tanggal.value;
+    if (!tanggal) {
+        alert('Tanggal wajib diisi!');
+        return false;
+    }
+    return true;
 }
-window.addEventListener('resize', () => {
-  const btn = document.getElementById('mobile-menu-btn');
-  btn.style.display = window.innerWidth <= 768 ? '' : 'none';
+
+// ===== AUTO DISMISS ALERTS =====
+document.addEventListener('DOMContentLoaded', () => {
+    const alerts = document.querySelectorAll('.custom-alert');
+    alerts.forEach(a => {
+        setTimeout(() => {
+            a.style.transition = 'opacity .5s ease, transform .5s ease';
+            a.style.opacity = '0';
+            a.style.transform = 'translateX(120%)';
+            setTimeout(() => a.remove(), 500);
+        }, 4500);
+    });
 });
 
-// ─── Modal ────────────────────────────────────────────────────
-function openModal(id)  { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
-document.querySelectorAll('.modal-overlay').forEach(m => {
-  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
-});
+// ===== CHART.JS =====
+const ctx = document.getElementById('financeChart').getContext('2d');
 
-// ─── Toast ────────────────────────────────────────────────────
-function showToast(msg, type = 'success') {
-  const t = document.getElementById('toast');
-  t.textContent = (type === 'success' ? '✓ ' : '✕ ') + msg;
-  t.className = 'show ' + type;
-  setTimeout(() => t.className = '', 3800);
-}
+const chartLabels = <?= json_encode($chartLabels) ?>;
+const chartPData  = <?= json_encode($chartPData)  ?>;
+const chartOData  = <?= json_encode($chartOData)  ?>;
 
-// ─── Format Rupiah (JS) ───────────────────────────────────────
-function fmtRp(n) {
-  return 'Rp ' + Math.abs(parseFloat(n) || 0).toLocaleString('id-ID', {maximumFractionDigits:0});
-}
+const gradientGreen = ctx.createLinearGradient(0, 0, 0, 300);
+gradientGreen.addColorStop(0, 'rgba(82,183,136,0.35)');
+gradientGreen.addColorStop(1, 'rgba(82,183,136,0.00)');
 
-// ─── Load Penjualan Table ─────────────────────────────────────
-async function loadPenjualan() {
-  const from = document.getElementById('filter-p-from').value;
-  const to   = document.getElementById('filter-p-to').value;
-  const res  = await fetch(`api_filter.php?type=penjualan&from=${from}&to=${to}`);
-  const data = await res.json();
-  const tbody = document.getElementById('tbody-penjualan');
-  if (!data.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Tidak ada data pada periode ini.</td></tr>';
-    document.getElementById('sum-p-total').textContent = 'Rp 0';
-    document.getElementById('sum-p-count').textContent = '0';
-    return;
-  }
-  let total = 0;
-  tbody.innerHTML = data.map((row, i) => {
-    total += parseFloat(row.nominal_penjualan);
-    return `<tr>
-      <td style="color:var(--text-muted); font-size:12px;">${i+1}</td>
-      <td style="color:var(--text-secondary);">${row.tanggal}</td>
-      <td class="profit-positive" style="font-weight:600;">${fmtRp(row.nominal_penjualan)}</td>
-      <td style="color:var(--text-secondary);">${row.keterangan}</td>
-      <td><div style="display:flex; gap:6px;">
-        <button class="btn-edit" onclick="editPenjualan(${row.id_penjualan})">Edit</button>
-        <button class="btn-danger" onclick="deletePenjualanConfirm(${row.id_penjualan})">Hapus</button>
-      </div></td>
-    </tr>`;
-  }).join('');
-  document.getElementById('sum-p-total').textContent = fmtRp(total);
-  document.getElementById('sum-p-count').textContent = data.length + ' transaksi';
-}
+const gradientRed = ctx.createLinearGradient(0, 0, 0, 300);
+gradientRed.addColorStop(0, 'rgba(224,122,95,0.30)');
+gradientRed.addColorStop(1, 'rgba(224,122,95,0.00)');
 
-function resetFilterP() {
-  document.getElementById('filter-p-from').value = new Date().toISOString().slice(0,7) + '-01';
-  document.getElementById('filter-p-to').value   = TODAY;
-  loadPenjualan();
-}
-
-// ─── Load Operasional Table ───────────────────────────────────
-async function loadOperasional() {
-  const from = document.getElementById('filter-o-from').value;
-  const to   = document.getElementById('filter-o-to').value;
-  const res  = await fetch(`api_filter.php?type=operasional&from=${from}&to=${to}`);
-  const data = await res.json();
-  const tbody = document.getElementById('tbody-operasional');
-  if (!data.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:28px; color:var(--text-muted);">Tidak ada data pada periode ini.</td></tr>';
-    document.getElementById('sum-o-total').textContent = 'Rp 0';
-    document.getElementById('sum-o-count').textContent = '0';
-    return;
-  }
-  let total = 0;
-  tbody.innerHTML = data.map((row, i) => {
-    total += parseFloat(row.nominal_operasional);
-    return `<tr>
-      <td style="color:var(--text-muted); font-size:12px;">${i+1}</td>
-      <td style="color:var(--text-secondary);">${row.tanggal}</td>
-      <td class="profit-negative" style="font-weight:600;">${fmtRp(row.nominal_operasional)}</td>
-      <td style="color:var(--text-secondary);">${row.keterangan}</td>
-      <td><div style="display:flex; gap:6px;">
-        <button class="btn-edit" onclick="editOperasional(${row.id_operasional})">Edit</button>
-        <button class="btn-danger" onclick="deleteOperasionalConfirm(${row.id_operasional})">Hapus</button>
-      </div></td>
-    </tr>`;
-  }).join('');
-  document.getElementById('sum-o-total').textContent = fmtRp(total);
-  document.getElementById('sum-o-count').textContent = data.length + ' transaksi';
-}
-
-function resetFilterO() {
-  document.getElementById('filter-o-from').value = new Date().toISOString().slice(0,7) + '-01';
-  document.getElementById('filter-o-to').value   = TODAY;
-  loadOperasional();
-}
-
-// ─── CRUD Penjualan ───────────────────────────────────────────
-async function submitAddPenjualan() {
-  const tanggal = document.getElementById('ap-tanggal').value;
-  const nominal = document.getElementById('ap-nominal').value;
-  const keterangan = document.getElementById('ap-keterangan').value.trim();
-  if (!tanggal || !nominal || nominal <= 0 || !keterangan) { showToast('Semua field wajib diisi dengan nilai valid!', 'error'); return; }
-  const fd = new FormData();
-  fd.append('action','add_penjualan'); fd.append('tanggal',tanggal); fd.append('nominal',nominal); fd.append('keterangan',keterangan);
-  const res = await (await fetch(API, { method:'POST', body:fd })).json();
-  showToast(res.message, res.success ? 'success' : 'error');
-  if (res.success) { closeModal('modal-add-penjualan'); loadPenjualan(); document.getElementById('ap-nominal').value=''; document.getElementById('ap-keterangan').value=''; }
-}
-
-async function editPenjualan(id) {
-  const res = await (await fetch(`${API}?action=get_penjualan&id=${id}`)).json();
-  if (!res.success) { showToast('Data tidak ditemukan', 'error'); return; }
-  const d = res.data;
-  document.getElementById('ep-id').value        = d.id_penjualan;
-  document.getElementById('ep-tanggal').value   = d.tanggal;
-  document.getElementById('ep-nominal').value   = d.nominal_penjualan;
-  document.getElementById('ep-keterangan').value= d.keterangan;
-  openModal('modal-edit-penjualan');
-}
-
-async function submitEditPenjualan() {
-  const id = document.getElementById('ep-id').value;
-  const tanggal = document.getElementById('ep-tanggal').value;
-  const nominal = document.getElementById('ep-nominal').value;
-  const keterangan = document.getElementById('ep-keterangan').value.trim();
-  if (!nominal || nominal <= 0 || !keterangan) { showToast('Data tidak valid!', 'error'); return; }
-  const fd = new FormData();
-  fd.append('action','edit_penjualan'); fd.append('id',id); fd.append('tanggal',tanggal); fd.append('nominal',nominal); fd.append('keterangan',keterangan);
-  const res = await (await fetch(API, { method:'POST', body:fd })).json();
-  showToast(res.message, res.success ? 'success' : 'error');
-  if (res.success) { closeModal('modal-edit-penjualan'); loadPenjualan(); }
-}
-
-async function deletePenjualanConfirm(id) {
-  if (!confirm('Yakin ingin menghapus data penjualan ini?')) return;
-  const fd = new FormData(); fd.append('action','delete_penjualan'); fd.append('id',id);
-  const res = await (await fetch(API, { method:'POST', body:fd })).json();
-  showToast(res.message, res.success ? 'success' : 'error');
-  if (res.success) loadPenjualan();
-}
-
-// ─── CRUD Operasional ─────────────────────────────────────────
-async function submitAddOperasional() {
-  const tanggal = document.getElementById('ao-tanggal').value;
-  const nominal = document.getElementById('ao-nominal').value;
-  const keterangan = document.getElementById('ao-keterangan').value.trim();
-  if (!tanggal || !nominal || nominal <= 0 || !keterangan) { showToast('Semua field wajib diisi dengan nilai valid!', 'error'); return; }
-  const fd = new FormData();
-  fd.append('action','add_operasional'); fd.append('tanggal',tanggal); fd.append('nominal',nominal); fd.append('keterangan',keterangan);
-  const res = await (await fetch(API, { method:'POST', body:fd })).json();
-  showToast(res.message, res.success ? 'success' : 'error');
-  if (res.success) { closeModal('modal-add-operasional'); loadOperasional(); document.getElementById('ao-nominal').value=''; document.getElementById('ao-keterangan').value=''; }
-}
-
-async function editOperasional(id) {
-  const res = await (await fetch(`${API}?action=get_operasional&id=${id}`)).json();
-  if (!res.success) { showToast('Data tidak ditemukan', 'error'); return; }
-  const d = res.data;
-  document.getElementById('eo-id').value        = d.id_operasional;
-  document.getElementById('eo-tanggal').value   = d.tanggal;
-  document.getElementById('eo-nominal').value   = d.nominal_operasional;
-  document.getElementById('eo-keterangan').value= d.keterangan;
-  openModal('modal-edit-operasional');
-}
-
-async function submitEditOperasional() {
-  const id = document.getElementById('eo-id').value;
-  const tanggal = document.getElementById('eo-tanggal').value;
-  const nominal = document.getElementById('eo-nominal').value;
-  const keterangan = document.getElementById('eo-keterangan').value.trim();
-  if (!nominal || nominal <= 0 || !keterangan) { showToast('Data tidak valid!', 'error'); return; }
-  const fd = new FormData();
-  fd.append('action','edit_operasional'); fd.append('id',id); fd.append('tanggal',tanggal); fd.append('nominal',nominal); fd.append('keterangan',keterangan);
-  const res = await (await fetch(API, { method:'POST', body:fd })).json();
-  showToast(res.message, res.success ? 'success' : 'error');
-  if (res.success) { closeModal('modal-edit-operasional'); loadOperasional(); }
-}
-
-async function deleteOperasionalConfirm(id) {
-  if (!confirm('Yakin ingin menghapus data operasional ini?')) return;
-  const fd = new FormData(); fd.append('action','delete_operasional'); fd.append('id',id);
-  const res = await (await fetch(API, { method:'POST', body:fd })).json();
-  showToast(res.message, res.success ? 'success' : 'error');
-  if (res.success) loadOperasional();
-}
-
-// ─── Chart.js — Shared plugin helpers ─────────────────────────
-function darkTooltip() {
-  return {
-    backgroundColor: 'rgba(8,14,10,0.95)',
-    titleColor: '#E8F5EC',
-    bodyColor: '#8DB89A',
-    borderColor: 'rgba(107,191,128,0.3)',
-    borderWidth: 1,
-    padding: 12,
-    cornerRadius: 12,
-    titleFont: { family: 'Playfair Display', size: 14 },
-    bodyFont: { family: 'DM Sans', size: 12 },
-    callbacks: {
-      label: ctx => '  ' + ctx.dataset.label + ': Rp ' + Math.abs(ctx.raw).toLocaleString('id-ID')
-    }
-  };
-}
-
-function darkLegend() {
-  return {
-    labels: {
-      font: { family: 'DM Sans', size: 12 },
-      color: '#8DB89A',
-      boxWidth: 12,
-      boxHeight: 12,
-      borderRadius: 3,
-      padding: 20
-    }
-  };
-}
-
-function darkScales() {
-  return {
-    x: {
-      grid: { color: 'rgba(107,191,128,0.06)', drawBorder: false },
-      ticks: { color: '#506858', font: { family: 'DM Sans', size: 11 } }
-    },
-    y: {
-      grid: { color: 'rgba(107,191,128,0.06)', drawBorder: false },
-      ticks: {
-        color: '#506858',
-        font: { family: 'DM Sans', size: 11 },
-        callback: v => 'Rp ' + (v/1000000).toFixed(1) + 'jt'
-      }
-    }
-  };
-}
-
-// ─── Chart.js Weekly ─────────────────────────────────────────
-(function() {
-  const chartData = <?= json_encode($chartData) ?>;
-  const canvas = document.getElementById('chart-weekly');
-  const ctx = canvas.getContext('2d');
-
-  const gradG = ctx.createLinearGradient(0,0,0,280);
-  gradG.addColorStop(0, 'rgba(107,191,128,0.35)');
-  gradG.addColorStop(0.7, 'rgba(107,191,128,0.05)');
-  gradG.addColorStop(1, 'rgba(107,191,128,0)');
-
-  const gradP = ctx.createLinearGradient(0,0,0,280);
-  gradP.addColorStop(0, 'rgba(255,107,157,0.3)');
-  gradP.addColorStop(0.7, 'rgba(255,107,157,0.05)');
-  gradP.addColorStop(1, 'rgba(255,107,157,0)');
-
-  new Chart(ctx, {
+new Chart(ctx, {
     type: 'line',
     data: {
-      labels: chartData.labels,
-      datasets: [
-        {
-          label: 'Penjualan',
-          data: chartData.penjualanData,
-          borderColor: '#6BBF80',
-          backgroundColor: gradG,
-          borderWidth: 2.5,
-          pointBackgroundColor: '#6BBF80',
-          pointBorderColor: '#0D1F0F',
-          pointBorderWidth: 2.5,
-          pointRadius: 5,
-          pointHoverRadius: 8,
-          pointHoverBackgroundColor: '#6BBF80',
-          pointHoverBorderColor: '#fff',
-          pointHoverBorderWidth: 2,
-          tension: 0.45, fill: true
-        },
-        {
-          label: 'Operasional',
-          data: chartData.operasionalData,
-          borderColor: '#FF6B9D',
-          backgroundColor: gradP,
-          borderWidth: 2.5,
-          pointBackgroundColor: '#FF6B9D',
-          pointBorderColor: '#0D1F0F',
-          pointBorderWidth: 2.5,
-          pointRadius: 5,
-          pointHoverRadius: 8,
-          pointHoverBackgroundColor: '#FF6B9D',
-          pointHoverBorderColor: '#fff',
-          pointHoverBorderWidth: 2,
-          tension: 0.45, fill: true
-        }
-      ]
+        labels: chartLabels,
+        datasets: [
+            {
+                label: 'Penjualan',
+                data: chartPData,
+                borderColor: '#52b788',
+                backgroundColor: gradientGreen,
+                borderWidth: 2.5,
+                pointBackgroundColor: '#52b788',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                fill: true,
+                tension: 0.42
+            },
+            {
+                label: 'Operasional',
+                data: chartOData,
+                borderColor: '#e07a5f',
+                backgroundColor: gradientRed,
+                borderWidth: 2.5,
+                pointBackgroundColor: '#e07a5f',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                fill: true,
+                tension: 0.42
+            }
+        ]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      aspectRatio: window.innerWidth < 768 ? 1.4 : 2.2,
-      interaction: { mode: 'index', intersect: false },
-      animation: {
-        duration: 1200,
-        easing: 'easeInOutQuart'
-      },
-      plugins: {
-        legend: darkLegend(),
-        tooltip: darkTooltip()
-      },
-      scales: darkScales()
-    }
-  });
-
-  // Update aspect ratio on resize
-  window.addEventListener('resize', () => {
-    // Chart.js handles responsive resize automatically
-  });
-})();
-
-// ─── Monthly Chart ────────────────────────────────────────────
-let monthlyChartInited = false;
-function initMonthlyChart() {
-  if (monthlyChartInited) return;
-  monthlyChartInited = true;
-
-  const monthly = <?= json_encode($monthly) ?>;
-  const labels  = monthly.map(r => r.label);
-  const pData   = monthly.map(r => r.penjualan);
-  const oData   = monthly.map(r => r.operasional);
-  const profitD = monthly.map(r => r.profit);
-
-  const ctx = document.getElementById('chart-monthly').getContext('2d');
-
-  const profitGrad = ctx.createLinearGradient(0,0,0,200);
-  profitGrad.addColorStop(0, 'rgba(201,112,90,0.2)');
-  profitGrad.addColorStop(1, 'rgba(201,112,90,0)');
-
-  new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [
-        {
-          label: 'Penjualan',
-          data: pData,
-          backgroundColor: 'rgba(107,191,128,0.6)',
-          hoverBackgroundColor: 'rgba(107,191,128,0.85)',
-          borderColor: 'rgba(107,191,128,0.9)',
-          borderWidth: 1,
-          borderRadius: 8,
-          borderSkipped: false
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: '#1C0A00',
+                titleColor: '#F5ECD7',
+                bodyColor: 'rgba(245,236,215,0.75)',
+                padding: 12,
+                cornerRadius: 10,
+                callbacks: {
+                    label: ctx => {
+                        const v = ctx.parsed.y;
+                        return '  ' + ctx.dataset.label + ': Rp ' + v.toLocaleString('id-ID');
+                    }
+                }
+            }
         },
-        {
-          label: 'Operasional',
-          data: oData,
-          backgroundColor: 'rgba(255,107,157,0.5)',
-          hoverBackgroundColor: 'rgba(255,107,157,0.75)',
-          borderColor: 'rgba(255,107,157,0.8)',
-          borderWidth: 1,
-          borderRadius: 8,
-          borderSkipped: false
-        },
-        {
-          label: 'Profit',
-          data: profitD,
-          type: 'line',
-          borderColor: '#C9705A',
-          backgroundColor: profitGrad,
-          borderWidth: 2.5,
-          pointRadius: 6,
-          pointHoverRadius: 9,
-          pointBackgroundColor: '#C9705A',
-          pointBorderColor: '#0D1F0F',
-          pointBorderWidth: 2,
-          pointHoverBackgroundColor: '#C9705A',
-          pointHoverBorderColor: '#fff',
-          tension: 0.45, fill: true,
-          yAxisID: 'y'
+        scales: {
+            x: {
+                grid: { color: 'rgba(107,58,42,0.07)' },
+                ticks: { color: 'rgba(28,10,0,0.5)', font: { size: 11, family: 'DM Sans' } }
+            },
+            y: {
+                grid: { color: 'rgba(107,58,42,0.07)' },
+                ticks: {
+                    color: 'rgba(28,10,0,0.5)',
+                    font: { size: 11, family: 'DM Sans' },
+                    callback: v => 'Rp ' + (v/1000000).toFixed(1) + 'jt'
+                },
+                beginAtZero: true
+            }
         }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      aspectRatio: window.innerWidth < 768 ? 1.3 : 2.2,
-      interaction: { mode: 'index', intersect: false },
-      animation: {
-        duration: 1400,
-        easing: 'easeInOutQuart',
-        delay: (ctx) => ctx.dataIndex * 80
-      },
-      plugins: {
-        legend: darkLegend(),
-        tooltip: darkTooltip()
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: { color: '#506858', font: { family: 'DM Sans', size: 11 } }
-        },
-        y: {
-          grid: { color: 'rgba(107,191,128,0.06)' },
-          ticks: {
-            color: '#506858',
-            font: { family: 'DM Sans', size: 11 },
-            callback: v => 'Rp ' + (v/1000000).toFixed(1) + 'jt'
-          }
-        }
-      }
     }
-  });
-}
+});
+
+// ===== SMOOTH SCROLL FOR SIDEBAR LINKS =====
+document.querySelectorAll('.nav-link[href^="#"]').forEach(link => {
+    link.addEventListener('click', e => {
+        e.preventDefault();
+        const target = document.querySelector(link.getAttribute('href'));
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // Close sidebar on mobile
+        if (window.innerWidth < 768) toggleSidebar();
+    });
+});
 </script>
 </body>
 </html>
