@@ -1,89 +1,73 @@
-# ☕ Brewledger — Cafe Finance Management System
+# React + TypeScript + Vite
 
-Sistem manajemen keuangan kafe berbasis PHP Native + MySQL + Bootstrap.
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
----
+Currently, two official plugins are available:
 
-## 📁 Struktur Folder
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
 
-```
-cafe_finance/
-├── index.php                  # Dashboard utama
-├── penjualan.php              # Router penjualan (CRUD)
-├── operasional.php            # Router operasional (CRUD)
-├── database.sql               # Script SQL database
-├── config/
-│   ├── database.php           # Konfigurasi & koneksi PDO
-│   └── helpers.php            # Fungsi bantu (formatRupiah, dll)
-├── models/
-│   ├── PenjualanModel.php     # Model data penjualan
-│   └── OperasionalModel.php   # Model data operasional
-└── controllers/
-    ├── PenjualanController.php  # Logic CRUD penjualan
-    └── OperasionalController.php # Logic CRUD operasional
-```
+## React Compiler
 
----
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## 🚀 Cara Setup
+## Expanding the ESLint configuration
 
-### 1. Persyaratan
-- PHP >= 8.1
-- MySQL / MariaDB
-- Web server: XAMPP / Laragon / WAMP
+If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
 
-### 2. Import Database
-Buka phpMyAdmin atau MySQL CLI, lalu jalankan:
-```sql
-source /path/to/cafe_finance/database.sql;
-```
+```js
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
 
-Atau paste isi `database.sql` di tab SQL phpMyAdmin.
+      // Remove tseslint.configs.recommended and replace with this
+      tseslint.configs.recommendedTypeChecked,
+      // Alternatively, use this for stricter rules
+      tseslint.configs.strictTypeChecked,
+      // Optionally, add this for stylistic rules
+      tseslint.configs.stylisticTypeChecked,
 
-### 3. Konfigurasi Database
-Edit `config/database.php`:
-```php
-define('DB_HOST', 'localhost');
-define('DB_USER', 'root');      // username MySQL kamu
-define('DB_PASS', '');          // password MySQL kamu
-define('DB_NAME', 'cafe_finance');
+      // Other configs...
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
 ```
 
-### 4. Jalankan
-Taruh folder `cafe_finance/` di:
-- XAMPP: `C:/xampp/htdocs/cafe_finance/`
-- Laragon: `C:/laragon/www/cafe_finance/`
+You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
 
-Akses di browser: `http://localhost/cafe_finance/`
+```js
+// eslint.config.js
+import reactX from 'eslint-plugin-react-x'
+import reactDom from 'eslint-plugin-react-dom'
 
----
-
-## ✨ Fitur
-
-| Fitur | Keterangan |
-|-------|-----------|
-| 📊 Dashboard | Statistik harian real-time |
-| 💰 Penjualan CRUD | Tambah, edit, hapus data pemasukan |
-| 🧾 Operasional CRUD | Tambah, edit, hapus data pengeluaran |
-| 📈 Grafik | Chart 7 hari pemasukan vs pengeluaran |
-| 🔍 Filter | Filter data berdasarkan rentang tanggal |
-| 🧮 Agregasi SQL | SUM total penjualan, operasional, keuntungan |
-| 📱 Responsive | Tampilan mobile-friendly dengan sidebar toggle |
-| 💱 Format Rupiah | Semua nominal dalam format Rp |
-
----
-
-## 🔒 Keamanan
-- Menggunakan PDO prepared statements (anti SQL Injection)
-- Input HTML di-escape dengan `htmlspecialchars()`
-- Validasi angka positif di server & client
-- CSRF sederhana melalui session
-
----
-
-## 🎨 Tech Stack
-- **Backend**: PHP 8.1+ Native (MVC Pattern)
-- **Database**: MySQL / MariaDB
-- **Frontend**: Bootstrap 5.3 + Custom CSS
-- **Chart**: Chart.js 4
-- **Font**: Playfair Display + DM Sans
+export default defineConfig([
+  globalIgnores(['dist']),
+  {
+    files: ['**/*.{ts,tsx}'],
+    extends: [
+      // Other configs...
+      // Enable lint rules for React
+      reactX.configs['recommended-typescript'],
+      // Enable lint rules for React DOM
+      reactDom.configs.recommended,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ['./tsconfig.node.json', './tsconfig.app.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      // other options...
+    },
+  },
+])
+```

@@ -1,0 +1,249 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 4%;
+    --foreground: 0 0% 95%;
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 320 100% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 140 80% 50%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 65%;
+    --accent: 320 100% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 320 50% 25%;
+    --input: 0 0% 15%;
+    --ring: 320 100% 60%;
+    --radius: 0.75rem;
+    --chart-1: 320 100% 60%;
+    --chart-2: 140 80% 50%;
+    --chart-3: 280 100% 60%;
+    --chart-4: 40 100% 60%;
+    --chart-5: 180 100% 50%;
+    --sidebar-background: 0 0% 8%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 320 100% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 320 50% 25%;
+    --sidebar-ring: 320 100% 60%;
+  }
+
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Futuristic KAI Lightning Animation */
+@keyframes lightning {
+  0%, 100% { 
+    text-shadow: 0 0 10px #ff00ff, 0 0 20px #ff00ff, 0 0 40px #ff00ff, 0 0 80px #00ff88;
+    opacity: 1;
+  }
+  25% { 
+    text-shadow: 0 0 5px #ff00ff, 0 0 10px #00ff88, 0 0 20px #ff00ff;
+    opacity: 0.8;
+  }
+  50% { 
+    text-shadow: 0 0 20px #00ff88, 0 0 40px #00ff88, 0 0 80px #ff00ff, 0 0 120px #00ff88;
+    opacity: 1;
+  }
+  75% { 
+    text-shadow: 0 0 15px #ff00ff, 0 0 30px #00ff88, 0 0 60px #ff00ff;
+    opacity: 0.9;
+  }
+}
+
+@keyframes lightning-flash {
+  0%, 90%, 100% { opacity: 0; }
+  92% { opacity: 1; }
+  94% { opacity: 0; }
+  96% { opacity: 0.5; }
+  98% { opacity: 0; }
+}
+
+@keyframes neon-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 5px #ff00ff, 0 0 10px #ff00ff, inset 0 0 5px rgba(255,0,255,0.2);
+  }
+  50% { 
+    box-shadow: 0 0 10px #00ff88, 0 0 20px #00ff88, inset 0 0 10px rgba(0,255,136,0.2);
+  }
+}
+
+@keyframes border-glow {
+  0%, 100% {
+    border-color: rgba(255, 0, 255, 0.5);
+    box-shadow: 0 0 10px rgba(255, 0, 255, 0.3);
+  }
+  50% {
+    border-color: rgba(0, 255, 136, 0.5);
+    box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+  }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes slide-in {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fade-in-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.kai-lightning {
+  animation: lightning 2s ease-in-out infinite;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+}
+
+.kai-lightning-intense {
+  animation: lightning 1s ease-in-out infinite;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+}
+
+.lightning-flash::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(255,0,255,0.1) 50%, transparent 100%);
+  animation: lightning-flash 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.neon-border {
+  animation: border-glow 3s ease-in-out infinite;
+}
+
+.neon-pulse {
+  animation: neon-pulse 2s ease-in-out infinite;
+}
+
+.float-animation {
+  animation: float 3s ease-in-out infinite;
+}
+
+.slide-in {
+  animation: slide-in 0.5s ease-out;
+}
+
+.fade-in-up {
+  animation: fade-in-up 0.6s ease-out;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(0 0% 4%);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ff00ff, #00ff88);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #ff44ff, #44ffaa);
+}
+
+/* Glass morphism */
+.glass-card {
+  background: rgba(10, 10, 15, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 0, 255, 0.2);
+}
+
+.glass-card-green {
+  background: rgba(10, 15, 10, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #ff00ff 0%, #00ff88 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* VIP and Economy badges */
+.badge-vip {
+  background: linear-gradient(135deg, #ff00ff, #ff44aa);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  box-shadow: 0 0 10px rgba(255, 0, 255, 0.5);
+}
+
+.badge-economy {
+  background: linear-gradient(135deg, #00ff88, #00cc66);
+  color: black;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+}
+
+/* Status indicators */
+.status-active {
+  background: rgba(0, 255, 136, 0.2);
+  color: #00ff88;
+  border: 1px solid rgba(0, 255, 136, 0.5);
+}
+
+.status-pending {
+  background: rgba(255, 200, 0, 0.2);
+  color: #ffcc00;
+  border: 1px solid rgba(255, 200, 0, 0.5);
+}
+
+/* Hover effects */
+.hover-glow:hover {
+  box-shadow: 0 0 20px rgba(255, 0, 255, 0.4), 0 0 40px rgba(0, 255, 136, 0.2);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+/* Chart container */
+.chart-container {
+  background: rgba(10, 10, 15, 0.8);
+  border: 1px solid rgba(255, 0, 255, 0.2);
+  border-radius: 12px;
+  padding: 20px;
+}
