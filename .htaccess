@@ -1,0 +1,82 @@
+# Bangjo - Apache Configuration
+
+# Enable mod_rewrite
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /bangjo/
+
+    # Protect .sql files
+    RewriteRule \.sql$ - [F,L]
+    
+    # Protect config files
+    RewriteRule config/ - [F,L]
+    
+    # Protect hidden files
+    RewriteRule "^\." - [F]
+</IfModule>
+
+# Prevent directory listing
+<IfModule mod_autoindex.c>
+    Options -Indexes
+</IfModule>
+
+# Set charset
+AddDefaultCharset utf-8
+
+# Set proper MIME types
+<IfModule mod_mime.c>
+    AddType application/javascript js
+    AddType text/css css
+    AddType image/svg+xml svg svgz
+    AddEncoding gzip svgz
+</IfModule>
+
+# Compress content
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/plain
+    AddOutputFilterByType DEFLATE text/html
+    AddOutputFilterByType DEFLATE text/xml
+    AddOutputFilterByType DEFLATE text/css
+    AddOutputFilterByType DEFLATE text/javascript
+    AddOutputFilterByType DEFLATE application/xml
+    AddOutputFilterByType DEFLATE application/xhtml+xml
+    AddOutputFilterByType DEFLATE application/rss+xml
+    AddOutputFilterByType DEFLATE application/javascript
+    AddOutputFilterByType DEFLATE application/x-javascript
+</IfModule>
+
+# Cache control
+<IfModule mod_expires.c>
+    ExpiresActive On
+    
+    # Default
+    ExpiresDefault "access plus 1 month"
+    
+    # Images
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/gif "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/x-icon "access plus 1 year"
+    
+    # CSS & JS
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    
+    # HTML
+    ExpiresByType text/html "access plus 1 week"
+</IfModule>
+
+# Prevent access to sensitive files
+<FilesMatch "(web\.config|\.env|\.htaccess|\.gitignore|package\.json|gulpfile\.js|README|composer\.lock)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# Error pages
+ErrorDocument 404 /bangjo/404.php
+ErrorDocument 500 /bangjo/404.php

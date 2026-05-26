@@ -1,49 +1,108 @@
--- ============================================
--- Cafe Finance Management System
--- Database: cafe_finance
--- ============================================
+-- Create Database
+CREATE DATABASE IF NOT EXISTS `bangjo_db`;
+USE `bangjo_db`;
 
-CREATE DATABASE IF NOT EXISTS cafe_finance CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE cafe_finance;
+-- Users Table
+CREATE TABLE `users` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `nama` VARCHAR(100) NOT NULL,
+  `username` VARCHAR(50) UNIQUE NOT NULL,
+  `password` VARCHAR(255) NOT NULL,
+  `role` ENUM('admin', 'petugas', 'peminjam') NOT NULL DEFAULT 'peminjam',
+  `status` ENUM('aktif', 'nonaktif') NOT NULL DEFAULT 'aktif',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Tabel Penjualan (Pemasukan)
-CREATE TABLE IF NOT EXISTS penjualan (
-    id_penjualan INT PRIMARY KEY AUTO_INCREMENT,
-    tanggal DATE NOT NULL,
-    nominal_penjualan DECIMAL(15,2) NOT NULL CHECK (nominal_penjualan > 0),
-    keterangan VARCHAR(255) DEFAULT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
+-- Kategori Table
+CREATE TABLE `kategori` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `nama_kategori` VARCHAR(100) NOT NULL UNIQUE,
+  `deskripsi` TEXT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Tabel Operasional (Pengeluaran)
-CREATE TABLE IF NOT EXISTS operasional (
-    id_operasional INT PRIMARY KEY AUTO_INCREMENT,
-    tanggal DATE NOT NULL,
-    nominal_operasional DECIMAL(15,2) NOT NULL CHECK (nominal_operasional > 0),
-    keterangan VARCHAR(255) DEFAULT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB;
+-- Alat Table
+CREATE TABLE `alat` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `kode_alat` VARCHAR(50) UNIQUE NOT NULL,
+  `nama_alat` VARCHAR(100) NOT NULL,
+  `kategori_id` INT NOT NULL,
+  `stok` INT NOT NULL DEFAULT 0,
+  `kondisi` ENUM('baik', 'kurang_baik', 'rusak') NOT NULL DEFAULT 'baik',
+  `lokasi_rak` VARCHAR(100),
+  `foto` VARCHAR(255),
+  `qr_code` VARCHAR(255),
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (kategori_id) REFERENCES kategori(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Sample Data Penjualan
-INSERT INTO penjualan (tanggal, nominal_penjualan, keterangan) VALUES
-(CURDATE(), 1850000, 'Penjualan kopi & minuman pagi'),
-(CURDATE(), 2300000, 'Penjualan siang + makanan'),
-(DATE_SUB(CURDATE(), INTERVAL 1 DAY), 3100000, 'Penjualan weekend'),
-(DATE_SUB(CURDATE(), INTERVAL 2 DAY), 2750000, 'Penjualan reguler'),
-(DATE_SUB(CURDATE(), INTERVAL 3 DAY), 1900000, 'Penjualan weekday'),
-(DATE_SUB(CURDATE(), INTERVAL 4 DAY), 2200000, 'Event live music'),
-(DATE_SUB(CURDATE(), INTERVAL 5 DAY), 2050000, 'Penjualan normal'),
-(DATE_SUB(CURDATE(), INTERVAL 6 DAY), 3400000, 'Weekend special menu');
+-- Peminjaman Table
+CREATE TABLE `peminjaman` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `kode_peminjaman` VARCHAR(50) UNIQUE NOT NULL,
+  `user_id` INT NOT NULL,
+  `tanggal_pinjam` DATE NOT NULL,
+  `deadline_kembali` DATE NOT NULL,
+  `status` ENUM('pending', 'disetujui', 'ditolak', 'sedang_dipinjam', 'sudah_dikembalikan') NOT NULL DEFAULT 'pending',
+  `catatan` TEXT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Sample Data Operasional
-INSERT INTO operasional (tanggal, nominal_operasional, keterangan) VALUES
-(CURDATE(), 650000, 'Bahan baku kopi & susu'),
-(CURDATE(), 300000, 'Gaji karyawan harian'),
-(DATE_SUB(CURDATE(), INTERVAL 1 DAY), 850000, 'Bahan baku + listrik'),
-(DATE_SUB(CURDATE(), INTERVAL 2 DAY), 720000, 'Operasional harian'),
-(DATE_SUB(CURDATE(), INTERVAL 3 DAY), 580000, 'Bahan baku minuman'),
-(DATE_SUB(CURDATE(), INTERVAL 4 DAY), 900000, 'Sound system + bahan baku'),
-(DATE_SUB(CURDATE(), INTERVAL 5 DAY), 670000, 'Operasional reguler'),
-(DATE_SUB(CURDATE(), INTERVAL 6 DAY), 780000, 'Bahan baku weekend');
+-- Detail Peminjaman Table
+CREATE TABLE `detail_peminjaman` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `peminjaman_id` INT NOT NULL,
+  `alat_id` INT NOT NULL,
+  `jumlah` INT NOT NULL DEFAULT 1,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (peminjaman_id) REFERENCES peminjaman(id) ON DELETE CASCADE,
+  FOREIGN KEY (alat_id) REFERENCES alat(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Pengembalian Table
+CREATE TABLE `pengembalian` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `peminjaman_id` INT NOT NULL,
+  `tanggal_kembali` DATE NOT NULL,
+  `kondisi_alat` ENUM('baik', 'kurang_baik', 'rusak') NOT NULL,
+  `denda` DECIMAL(10, 2) DEFAULT 0,
+  `keterangan` TEXT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (peminjaman_id) REFERENCES peminjaman(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Log Aktivitas Table
+CREATE TABLE `log_aktivitas` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `aktivitas` VARCHAR(255) NOT NULL,
+  `deskripsi` TEXT,
+  `tabel` VARCHAR(50),
+  `record_id` INT,
+  `ip_address` VARCHAR(45),
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Insert Default Admin User (password: admin123)
+INSERT INTO `users` (`nama`, `username`, `password`, `role`, `status`) VALUES
+('Administrator', 'admin', '$2y$10$YIjlrBJSXzQr.h8YG7Uk4eKR8qKNp5wBccP1I9XXZL5gWQaYFZnRS', 'admin', 'aktif'),
+('Petugas Sistem', 'petugas', '$2y$10$7h6Z3K9pL5mN2X1Q8w9Y0u7R4P5O2N3M8K9L0J1H2G3F4E5D6C7B', 'petugas', 'aktif'),
+('Peminjam Test', 'peminjam', '$2y$10$Z9N2M3L8K7J6H5G4F3E2D1C0B9A8Z7Y6X5W4V3U2T1S0R9Q8P7', 'peminjam', 'aktif');
+
+-- Create Indexes for better performance
+CREATE INDEX idx_user_role ON users(role);
+CREATE INDEX idx_user_status ON users(status);
+CREATE INDEX idx_alat_kategori ON alat(kategori_id);
+CREATE INDEX idx_peminjaman_user ON peminjaman(user_id);
+CREATE INDEX idx_peminjaman_status ON peminjaman(status);
+CREATE INDEX idx_detail_peminjaman ON detail_peminjaman(peminjaman_id);
+CREATE INDEX idx_pengembalian_peminjaman ON pengembalian(peminjaman_id);
+CREATE INDEX idx_log_aktivitas_user ON log_aktivitas(user_id);
+CREATE INDEX idx_log_aktivitas_created ON log_aktivitas(created_at);

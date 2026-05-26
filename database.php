@@ -1,44 +1,20 @@
 <?php
-// ============================================
 // Database Configuration
-// ============================================
-
 define('DB_HOST', 'localhost');
 define('DB_USER', 'root');
 define('DB_PASS', '');
-define('DB_NAME', 'cafe_finance');
-define('DB_CHARSET', 'utf8mb4');
+define('DB_NAME', 'bangjo_db');
 
-class Database {
-    private static $instance = null;
-    private $connection;
+// Create connection with MySQLi
+$conn = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME);
 
-    private function __construct() {
-        $dsn = "mysql:host=" . DB_HOST . ";dbname=" . DB_NAME . ";charset=" . DB_CHARSET;
-        $options = [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,
-        ];
-        try {
-            $this->connection = new PDO($dsn, DB_USER, DB_PASS, $options);
-        } catch (PDOException $e) {
-            die(json_encode(['error' => 'Database connection failed: ' . $e->getMessage()]));
-        }
-    }
-
-    public static function getInstance(): self {
-        if (self::$instance === null) {
-            self::$instance = new self();
-        }
-        return self::$instance;
-    }
-
-    public function getConnection(): PDO {
-        return $this->connection;
-    }
+// Check connection
+if ($conn->connect_error) {
+    die("Connection failed: " . $conn->connect_error);
 }
 
-function db(): PDO {
-    return Database::getInstance()->getConnection();
-}
+// Set charset to utf8
+$conn->set_charset("utf8mb4");
+
+// Set timezone
+date_default_timezone_set('Asia/Jakarta');
